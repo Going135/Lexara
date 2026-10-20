@@ -1,0 +1,96 @@
+# 第三方组件与素材说明 · Third-Party Notices
+
+本项目（词蛛 LEXARA）在开发与分发中使用了以下开源项目、模型与数据。
+按各许可证要求，此文件随源码一起分发，**不修改任何第三方代码**。
+
+---
+
+## 一、核心依赖（功能层面）
+
+### 1. RapidOCR · `rapidocr-onnxruntime`
+- **版本**：1.2.3
+- **许可证**：Apache License 2.0
+- **用途**：离线 OCR 推理框架。截屏后识别屏幕上的英文单词，返回文字与逐行坐标。
+- **上游**：<https://github.com/RapidAI/RapidOCR>
+- **版权**：Copyright (c) RapidAI 及贡献者
+- **说明**：Apache-2.0 要求保留版权与许可声明；本项目未修改其源码，仅作为依赖调用。
+
+### 2. ECDICT Revised 英汉词库 · `assets/ecdict.sqlite`
+- **版本**：ECDICT Revised v0.1.1（内置 758,497 词条，与上游发布数据条数一致）
+- **上游**：<https://github.com/sliuhaob/ecdict-revised>
+- **原始上游**：<https://github.com/skywind3000/ECDICT>（MIT，Copyright (c) 2017 skywind3000）
+- **许可证**：**双许可**
+  - 基础 ECDICT 内容 + 配套脚本：**MIT**
+  - 新增中文修订内容：**CC BY-SA 4.0**
+- **用途**：本地词条释义、音标、词形映射、考纲标签与词频来源。
+- **说明**：
+  - 以 SQLite 形式原样随程序分发，**未修改任何词条内容**，仅在查询侧建立索引。
+  - 按 CC BY-SA 4.0，此数据文件（及其衍生）同样以 CC BY-SA 4.0 提供；
+    它作为「独立数据文件」与程序代码并存，不改变代码部分的 MIT 许可。
+  - 署名要求以上游 `ATTRIBUTION.md` 为准。
+
+### 3. 程序化蜘蛛 · web-crawlers（`js/crawler.js`）
+- **版本**：web-crawlers 0.1.0
+- **上游**：<https://github.com/cyohei9907/web-crawlers>
+- **许可证**：⚠ **该仓库当前未声明任何许可证** —— 根目录没有 `LICENSE` 文件，
+  README 里也没有许可段落。按默认版权规则，这表示「保留所有权利」。
+- **用途**：蜘蛛的**形象与步态**移植自该项目的 `js/crawler.js`：8 条步足 + 2 条触须、
+  两骨 IK、固定膝侧、四足步态、迈步阈值与过伸回拉。本项目用 Python / Qt 重写，
+  逻辑与调参对齐原实现（见 `src/crawler_spider.py` 顶部注释）。
+- **发布前必须做**（否则有法律风险）：
+  - **若该仓库与本项目同一作者**：请在 web-crawlers 仓库补一份 `LICENSE`
+    （建议 MIT，与本项目一致），本段随即可改为「同一作者作品」；
+  - **若作者是他人**：需取得书面授权；否则应把本项目定位为「算法思路参考」
+    并重做形象细节，不直接沿用其几何参数与视觉特征。
+
+---
+
+## 二、运行环境依赖（随 exe 一同分发）
+
+| 组件 | 版本 | 许可证 | 用途 | 备注 |
+| --- | --- | --- | --- | --- |
+| PySide6 / shiboken6 | 6.12.0 | **LGPL-3.0** | Qt 的 Python 绑定，全部界面 | 见下方「分发义务」 |
+| Qt 6 | 6.12.0 | **LGPL-3.0** | PySide6 的底层库 | 同上 |
+| ONNX Runtime | 1.31.0 | MIT | RapidOCR 的推理后端 | |
+| OpenCV (opencv-python) | 5.0.0 | Apache-2.0 | 图像预处理：缩放、二值化、补白 | |
+| NumPy | 2.5.4 | BSD-3-Clause | 数组与矩阵运算 | |
+| Pillow | 13.0.0 | MIT-CMU (HPND) | 图标生成、图像读写 | 仅开发与打包阶段 |
+| PyYAML | 6.0.3 | MIT | RapidOCR 读取自带配置 | |
+| six | 1.17.0 | MIT | RapidOCR 的传递依赖 | |
+
+### 关于 PySide6 / Qt 的 LGPL-3.0 分发义务
+
+本项目以 PyInstaller 打包成单个 exe，Qt 库被**内嵌**进可执行文件。LGPL-3.0 允许
+闭源应用动态使用 Qt，但分发时必须满足：
+
+1. **声明使用了 Qt 与 PySide6**，并附 LGPL-3.0 全文（见 `licenses/LGPL-3.0.txt`）；
+2. 允许最终用户**替换其中的 Qt 库**（LGPL §4 的「重链接」要求）。
+   本项目采用的方式是：**同时提供源码与打包配置（5 个 `.spec`）**，
+   用户可自行用修改后的 Qt 重新打包；
+3. 不修改 Qt 源码（本项目确实没有修改）。
+
+> 若后续需要更宽松的分发条件，可考虑购买 Qt 商业许可。
+
+---
+
+## 三、素材来源
+
+| 素材 | 说明 |
+| --- | --- |
+| `assets/skins/*` 皮肤贴图 | **本项目自绘 / 自制**，随本项目 MIT 许可证分发 |
+| `assets/sfx/*.mp3` 音效 | ⚠ 待补充来源与授权（是否为 CC0 / 自录 / 商用素材） |
+| `assets/jar_crack_*.png` | 玻璃罐破碎序列帧，⚠ 待补充来源 |
+| `assets/ui/*` | 界面装饰图，⚠ 待补充来源 |
+| `assets/exam-tags.sqlite` | 考纲标签表，由 ECDICT 标签派生 |
+| `assets/industry.sqlite` | 行业词表，本项目自行整理（307 条） |
+
+---
+
+## 四、本项目自身
+
+- **源码许可证：MIT**（见仓库根目录 `LICENSE`）。
+- 自绘素材（四套皮肤贴图、UI 装饰）同属 MIT。
+- **例外**：`assets/ecdict.sqlite` 是第三方数据，按上游的双许可
+  （MIT + CC BY-SA 4.0）分发，不适用本项目的 MIT 许可证。
+
+*最后更新：2026-10-20*

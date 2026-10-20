@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------
+# 词蛛 LEXARA · Git 忽略规则
+#
+# 为什么需要这个文件：仓库根目录总计 2.5 GB，其中 .venv 506 MB、
+# build 321 MB、dist 1.5 GB，还有多个单文件超过 GitHub 的 100 MB 硬限制
+# （Lexara.exe 152 MB、LexaraFixed.exe 181 MB、build 下的 .pkg 151 MB）。
+# 不加忽略规则直接 `git add -A`，push 一定被拒。
+#
+# 忽略之后仓库约 50 MB，其中最大的是 assets/ecdict.sqlite（44 MB）——
+# 它会触发 GitHub 的 50 MB「警告」但不会被拒；想彻底避免警告可以
+# 改用 Git LFS 单独跟踪它。
+# ---------------------------------------------------------------
+
+# ---- 虚拟环境 / 构建产物（体积大，且都能重建）----
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
+
+# ---- Python 缓存 ----
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- 运行时产物（日志、主题、临时 JSON）----
+*.log
+run.log
+theme.json
+*.tmp
+
+# ---- 打包备份（原版 pyc / 旧图标，仅本地留存）----
+archive/
+
+# ---- 源码快照备份 / 构建中间产物 ----
+# backup/ 里有一个 43 MB 的源码 zip（`lexara_src_*.zip`），与 src/ 内容重复；
+# .deck-* 是演示文稿的构建中间件。两者都不该进代码仓库。
+backup/
+src.zip
+t_probe.png
+.deck-build/
+.deck-output/
+
+# ---- 工具与编辑器（AI 会话记录、截图，不属于项目代码）----
+.workbuddy/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---- 注意：以下**不要**忽略 ----
+# assets/*.sqlite   —— 词典与考纲是运行必需资源
+# assets/skins/     —— 蜘蛛皮肤
+# src/qml/          —— QML 界面
+# test/ tools/      —— 测试与工具脚本
+# *.spec            —— 5 个打包配置

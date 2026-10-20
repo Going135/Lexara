@@ -1,0 +1,12 @@
+# 词蛛 LEXARA · 开发期依赖（打包见 tools/build_exe.bat）
+# 安装：pip install -r requirements.txt
+# 说明：QtQuick/QtQml 属于 Essentials，不需要 PySide6-Addons。
+PySide6-Essentials==6.12.0
+shiboken6==6.12.0
+rapidocr_onnxruntime==1.2.3
+onnxruntime==1.31.0
+opencv-python==5.0.0.93
+numpy==2.5.4
+
+# 仅打包需要（运行源码不需要）
+pyinstaller==6.22.3

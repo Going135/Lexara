@@ -1,0 +1,174 @@
+{
+  "version": "1.1",
+  "default_skin": "original",
+  "coordinate_system": {
+    "description": "身体局部坐标与原程序几何完全一致，+x 为蜘蛛头部方向；皮肤不参与 IK。",
+    "body_rect": [
+      -34.0,
+      -23.375,
+      76.5,
+      46.75
+    ],
+    "head_rect": [
+      30.0,
+      -22.5,
+      42.5,
+      45.0
+    ]
+  },
+  "skins": [
+    {
+      "id": "original",
+      "name": "原皮 · 八足微光",
+      "body": null,
+      "head": null,
+      "leg": {
+        "base": "#5cc8ff",
+        "highlight": "#9be0ff",
+        "outline": "#142878",
+        "joint": "#ff4a6e"
+      }
+    },
+    {
+      "id": "white_jump_spider",
+      "name": "白跳蛛",
+      "body": "white_jump_spider_body.png",
+      "head": "white_jump_spider_head.png",
+      "leg": {
+        "base": "#F2F4F7",
+        "highlight": "#FFFFFF",
+        "outline": "#7F8790",
+        "joint": "#8C959E"
+      },
+      "body_size_px": [
+        256,
+        156
+      ],
+      "body_visible_bbox_px": [
+        2,
+        2,
+        254,
+        154
+      ],
+      "head_size_px": [
+        160,
+        170
+      ],
+      "head_visible_bbox_px": [
+        2,
+        2,
+        158,
+        168
+      ]
+    },
+    {
+      "id": "pixel_spider",
+      "name": "像素蛛",
+      "body": "pixel_spider_body.png",
+      "head": "pixel_spider_head.png",
+      "leg": {
+        "base": "#242424",
+        "highlight": "#3A3A3A",
+        "outline": "#090909",
+        "joint": "#505050"
+      },
+      "body_size_px": [
+        256,
+        156
+      ],
+      "body_visible_bbox_px": [
+        2,
+        2,
+        254,
+        154
+      ],
+      "head_size_px": [
+        160,
+        170
+      ],
+      "head_visible_bbox_px": [
+        2,
+        2,
+        158,
+        168
+      ]
+    },
+    {
+      "id": "milk_spider",
+      "name": "奶蛛",
+      "body": "milk_spider_body.png",
+      "head": "milk_spider_head.png",
+      "leg": {
+        "base": "#F2C34A",
+        "highlight": "#FFE08A",
+        "outline": "#A9791F",
+        "joint": "#D99D2E"
+      },
+      "body_size_px": [
+        256,
+        156
+      ],
+      "body_visible_bbox_px": [
+        2,
+        2,
+        254,
+        154
+      ],
+      "head_size_px": [
+        160,
+        170
+      ],
+      "head_visible_bbox_px": [
+        2,
+        2,
+        158,
+        168
+      ]
+    }
+  ],
+  "asset_contract": {
+    "purpose": "工业化标准化皮肤贴图契约：所有皮肤在同一局部坐标框内占用相同视觉包围盒，切换时不改变腿根、身体占位或缩放比例。",
+    "alpha_bbox_threshold": 0,
+    "body": {
+      "canvas_px": [
+        256,
+        156
+      ],
+      "visible_bbox_px": [
+        2,
+        2,
+        254,
+        154
+      ],
+      "visible_size_px": [
+        252,
+        152
+      ],
+      "source_render_aspect": "30.6:18.7"
+    },
+    "head": {
+      "canvas_px": [
+        160,
+        170
+      ],
+      "visible_bbox_px": [
+        2,
+        2,
+        158,
+        168
+      ],
+      "visible_size_px": [
+        156,
+        166
+      ],
+      "source_render_aspect": "17:18"
+    },
+    "compression": {
+      "format": "PNG",
+      "alpha": "RGBA/transparent",
+      "palette": "indexed PNG",
+      "resize_policy": "先裁切原素材有效 alpha 区域，再统一放入标准设计框；像素蛛使用 NEAREST，其他皮肤使用 LANCZOS。",
+      "runtime_scaling": "Qt IgnoreAspectRatio，严格铺满对应局部坐标框；因此源图必须遵守标准框，不得自行增加透明留白。"
+    }
+  }
+}

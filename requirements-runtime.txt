@@ -1,0 +1,9 @@
+# 词蛛 LEXARA · 运行期依赖（不含打包工具）
+# 这个文件只装「跑起来」需要的东西，比 requirements.txt 少一个 PyInstaller。
+# 安装：.venv\Scripts\python -m pip install -r requirements-runtime.txt
+PySide6-Essentials==6.12.0
+shiboken6==6.12.0
+rapidocr_onnxruntime==1.2.3
+onnxruntime==1.31.0
+opencv-python==5.0.0.93
+numpy==2.5.4

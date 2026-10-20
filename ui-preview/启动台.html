@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>八足微光 · 启动台原型</title>
+<style>
+/* ------------------------------------------------------------------ 主题
+   Liquid Glass 浅色玻璃：规范色 primary #1A1A1A / secondary #4A4A4A /
+   tertiary #0066FF / neutral #FFFFFF。布局与几何规则一条没动，只换皮。
+   字体走系统 UI 栈，数值与状态用等宽（JetBrains Mono → 系统等宽兜底）。 */
+:root{
+  --ink:#1A1A1A; --ink2:#4A4A4A; --accent:#0066FF; --neutral:#FFFFFF;
+  /* 小尺寸控件上的实心蓝：同色相压深一档，白字才够 4.5:1 */
+  --accent-deep:#0052CC;
+  --bg:#EDF1F6; --panel:rgba(255,255,255,.66); --panel2:rgba(255,255,255,.9);
+  --line:rgba(26,26,26,.10); --line2:rgba(26,26,26,.22);
+  --text:#1A1A1A; --sub:#4A4A4A; --hi:#1A1A1A; --faint:#6B6B6B;
+  /* 状态色只降饱和，不引入规范外的新色相 */
+  --green:#2E8B62; --warn:#B27315; --bad:#D6453C;
+  --radius:12px; --radius-sm:8px;
+  --spring:cubic-bezier(.34,1.32,.64,1);   /* 弹性：刚度 120 / 阻尼 20 的近似 */
+  --ease:cubic-bezier(.4,0,.2,1);
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+}
+@property --ir{syntax:'<angle>';initial-value:0deg;inherits:false}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--text);
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,"Helvetica Neue","Microsoft YaHei",sans-serif;
+  background:
+    radial-gradient(1100px 640px at 20% -10%, #FFFFFF 0%, rgba(255,255,255,0) 62%),
+    radial-gradient(920px 620px at 95% 106%, #D8E5F7 0%, rgba(216,229,247,0) 58%),
+    var(--bg);
+  overflow:hidden;
+}
+.desk{position:relative;height:100%;display:grid;place-items:center}
+/* 背景流体：两团缓慢形变的色块，给玻璃层提供可折射的内容 */
+.desk::before,.desk::after{
+  content:"";position:absolute;z-index:0;pointer-events:none;filter:blur(60px);opacity:.5;
+  will-change:transform,border-radius}
+.desk::before{width:46vmin;height:46vmin;left:8%;top:12%;
+  background:radial-gradient(circle at 35% 35%,rgba(0,102,255,.42),rgba(0,102,255,0) 70%);
+  animation:morph 22s var(--ease) infinite alternate}
+.desk::after{width:52vmin;height:52vmin;right:6%;bottom:8%;
+  background:radial-gradient(circle at 60% 40%,rgba(74,74,74,.3),rgba(74,74,74,0) 72%);
+  animation:morph 28s var(--ease) infinite alternate-reverse}
+@keyframes morph{
+  0%{border-radius:42% 58% 63% 37%/45% 38% 62% 55%;transform:translate3d(0,0,0) scale(1)}
+  50%{border-radius:58% 42% 33% 67%/62% 55% 45% 38%;transform:translate3d(4vmin,-3vmin,0) scale(1.08)}
+  100%{border-radius:36% 64% 55% 45%/38% 62% 38% 62%;transform:translate3d(-3vmin,4vmin,0) scale(1.02)}
+}
+
+/* ------------------------------------------------------------------ 窗口
+   窗口本身不再是一整块玻璃：上半区（玻璃罐）完全透明 —— 无边框、无填充，
+   桌面直接透过来；玻璃皮只留给标题栏和下半区交互面板（见 .titlebar / .panel）。 */
+.win{
+  position:relative; z-index:1; width:min(1060px,94vw); height:min(720px,92vh);
+  display:flex; flex-direction:column;
+  opacity:0; transform:translateY(16px) scale(.99);
+  transition:opacity .48s var(--ease), transform .48s var(--spring);
+}
+@keyframes irid{to{--ir:360deg}}
+.win.show{opacity:1; transform:none}
+.win.gone{opacity:0; transform:translateY(8px) scale(.98); pointer-events:none}
+
+.titlebar{
+  height:44px; flex:0 0 44px; display:flex; align-items:center; gap:12px;
+  padding:0 14px; cursor:grab;
+  border:1px solid rgba(255,255,255,.72); border-bottom:1px solid var(--line);
+  border-radius:var(--radius) var(--radius) 0 0;
+  background:linear-gradient(180deg,rgba(255,255,255,.82) 0%,rgba(255,255,255,.66) 100%);
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  backdrop-filter:blur(28px) saturate(180%);
+  box-shadow:0 10px 28px rgba(26,26,26,.10), inset 0 1px 0 rgba(255,255,255,.9);
+  user-select:none;
+}
+.titlebar:active{cursor:grabbing}
+.win-title{font-weight:600;color:var(--hi);letter-spacing:.4px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;min-width:0;
+  /* 轻微色差：蓝/红各偏 1px，Liquid Glass 的色散感 */
+  text-shadow:-1px 0 rgba(0,102,255,.22),1px 0 rgba(214,69,60,.14)}
+.win-title em{font-style:normal;color:var(--sub);font-weight:400;font-size:12px;margin-left:8px;
+  text-shadow:none}
+.chip-status{
+  margin-left:auto;font-size:11px;color:var(--sub);border:1px solid var(--line2);
+  border-radius:999px;padding:3px 10px;display:flex;align-items:center;gap:6px;flex:0 0 auto;
+  background:rgba(255,255,255,.5)}
+.chip-status b{width:6px;height:6px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px rgba(46,139,98,.5)}
+.close{
+  width:26px;height:26px;border-radius:var(--radius-sm);border:1px solid var(--line2);
+  background:rgba(255,255,255,.6);color:var(--sub);font-size:13px;line-height:1;cursor:pointer;
+  transition:transform .2s var(--ease), background .2s var(--ease), color .2s var(--ease)}
+.close:hover{color:#fff;background:var(--bad);border-color:var(--bad);transform:scale(1.03)}
+.close:active{transform:scale(.97)}
+/* 设置入口：第四轮改成**齿轮图标**（不再写「设置」两个字）。
+   图标是内联 SVG，颜色跟 currentColor，所以 hover/展开态的变色规则一行没改；
+   文案降级成 aria-label + title，读屏和鼠标悬停都还能知道这是什么。 */
+.gear{
+  flex:0 0 auto;width:28px;height:28px;padding:0;display:grid;place-items:center;
+  color:var(--ink2);cursor:pointer;
+  border:1px solid var(--line2);border-radius:var(--radius-sm);
+  background:rgba(255,255,255,.6);
+  transition:transform .2s var(--spring), color .2s var(--ease),
+             border-color .2s var(--ease), box-shadow .2s var(--ease)}
+.gear svg{width:16px;height:16px;fill:none;stroke:currentColor;
+  transition:transform .32s var(--ease)}
+.gear:hover{color:var(--accent);border-color:rgba(0,102,255,.5);transform:scale(1.03);
+  box-shadow:0 8px 20px rgba(0,102,255,.14)}
+.gear:hover svg{transform:rotate(45deg)}
+.gear:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gear[aria-expanded="true"]{color:#fff;background:var(--accent-deep);border-color:transparent}
+
+.body{flex:1;display:flex;flex-direction:column;min-height:0}
+
+/* ------------------------------------------------------------------ 上半：圆柱瓶身
+   读法纠正（2026-10-15 第二轮之后）：整个窗口是**一个圆柱玻璃瓶的正视图** ——
+   上面那条界面是**盖子**，下面那块是**瓶身标签**（所以它是矩形、贴满整宽），
+   中间这块透明区域是**瓶身**。两侧玻璃板 = 圆柱的左右轮廓，所以要
+   (1) 上下延长，一直顶到盖子下沿和标签上沿，跟它们垂直相接；
+   (2) 往两边挪开，贴近窗口两侧（只剩 3% 余量），瓶身才真的等于窗口宽。
+   第四轮（线框图比例）：盖子:瓶身:标签 = 44 : 64% : 36% —— 瓶身从 58% 抬到 64%，
+   和线框图里「标签比瓶身矮」一致。代价写在 README：面板净高只剩 243px，
+   主页内容（六行档位 + 桌宠大小 + 显示开关 + 收藏 + 状态行）放不下，
+   所以面板改成「内容滚、部署行钉底」，按钮永远够得着。 */
+.stage{
+  position:relative; flex:0 0 64%; min-height:0; overflow:hidden;
+}
+.stage-tag{
+  position:absolute;left:16px;top:12px;font-size:11px;letter-spacing:1.2px;
+  color:var(--faint);text-transform:uppercase;font-family:var(--mono)}
+/* 瓶身现在占满上半区（左右各 3% 余量），所以这两行注解只能压在玻璃内侧。
+   位置从原来的左下角挪到**左上角标签底下**：蜘蛛的行走带是罐宽 30%~70%、
+   脚的最下沿到罐高 ~83%（实测十脚 y∈[33%,83%]），左上角这块是唯一不会被身体或腿扫到的地方。
+   窗口太窄时（≤860px）注解会盖住太多瓶身，直接收起来。 */
+.stage-tip{
+  position:absolute;left:16px;top:34px;right:auto;font-size:11px;color:var(--sub);
+  border:1px dashed var(--line2);border-radius:var(--radius-sm);padding:5px 10px;
+  max-width:190px;line-height:1.55;background:rgba(255,255,255,.45)}
+@media (max-width:860px){.stage-tip{display:none}}
+
+.jar-wrap{position:absolute;inset:0;pointer-events:none}
+.jar-wrap.shake-soft{animation:soft .18s ease-in-out}
+.jar-wrap.shake-hard{animation:hard .3s ease-in-out}
+@keyframes soft{0%,100%{transform:none}30%{transform:translate(-3px,-2px)}60%{transform:translate(3px,1px)}}
+@keyframes hard{0%,100%{transform:none}15%{transform:translate(-7px,-4px)}35%{transform:translate(7px,3px)}
+  55%{transform:translate(-5px,-2px)}75%{transform:translate(4px,2px)}}
+.jar-wrap.fade{opacity:0;transform:scale(1.05);transition:opacity .4s var(--ease), transform .48s var(--spring)}
+
+/* 瓶身只有一个几何容器 .jar-box：侧壁 / 地面 / 蜘蛛 / 裂纹 / 碎片 / 闪白
+   全部 inset:0 叠在它上面 —— 坐标系一致，蜘蛛不会走出瓶子，
+   裂纹图的竖带也和侧壁严格重合。
+   它现在**顶天立地**：上沿就是盖子下沿，下沿就是标签上沿（bottom:0 / height:100%），
+   左右各留 3% —— 这两条 3% 的余量是玻璃和窗口边框之间的空气。 */
+.jar-box{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+  --wall:3.2%;                          /* 侧壁宽 = 罐宽的 3.2%（设计宽 980px → 31px） */
+  width:min(980px,94%);height:100%}
+/* 玻璃侧壁 = 圆柱的左右轮廓：有厚度的玻璃边，白高光 + 淡蓝内芯。
+   宽度一律写成 --wall 百分比而不是定值：裂纹图用 object-fit:fill 铺满 .jar-box，
+   图上那条不透明竖带就是「罐宽的 3.2%」，壁只有跟着罐宽同比例缩放才不会和竖带脱开。
+   上下不留圆角、也不画上/下边线 —— 它是要和盖子、标签**垂直相接**的，
+   接缝由 .titlebar 的下边线和 .panel 的上边线交代。 */
+.glass-wall{position:absolute;top:0;bottom:0;width:var(--wall);pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,.92) 0%,rgba(226,238,252,.40) 38%,
+    rgba(255,255,255,.74) 72%,rgba(199,219,244,.55) 100%);
+  border:1px solid rgba(26,26,26,.10);border-top:0;border-bottom:0;
+  box-shadow:inset 0 0 14px rgba(0,102,255,.10), 0 0 14px rgba(26,26,26,.06)}
+.glass-wall.l{left:0}
+.glass-wall.r{right:0}
+/* 壁的上沿亮边 = 盖子底下那圈「罐口」缝；破罐时它先没，收回落定后回来 */
+.glass-wall::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,0),#fff 45%,rgba(255,255,255,0));
+  opacity:.9;transition:opacity .26s var(--ease)}
+.jar-box.opened .glass-wall::after{opacity:0}
+/* 瓶底：圆柱的底面在正视图里是一条又扁又宽的椭圆，紧贴标签上沿；
+   左右收到侧壁内沿，别压到玻璃外面去。 */
+.glass-inner{position:absolute;left:var(--wall);right:var(--wall);bottom:0;height:13%;
+  border-radius:50%;
+  background:radial-gradient(60% 100% at 50% 100%, rgba(0,102,255,.20), rgba(26,26,26,.16) 70%, transparent);
+  filter:blur(1px)}
+
+/* 蜘蛛画布 + 粒子 + 裂纹层。层序一律写死 z-index，别靠 DOM 顺序 ——
+   磨砂层要用 backdrop-filter「采样」它下面的蜘蛛，谁在谁上面必须确定。 */
+canvas.layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#spiderCanvas{pointer-events:auto;cursor:pointer;z-index:1}
+/* 整面磨砂：中间也是玻璃，所以给瓶身加**一层很轻的磨砂**，目的是让瓶里的蜘蛛发虚。
+   半径只有 3.4px（面板那种 28px 会直接把蜘蛛糊没），饱和度 +12% 补回一点通透感，
+   白色蒙版压到 .05 以下 —— 仍然读得出「透明」，只是隔了一层玻璃。
+   inset:0 覆盖整面（含两条侧壁），壁和瓶底椭圆排在它上面（z-index 4/3）所以边缘高光不糊。 */
+.glass-face{position:absolute;inset:0;z-index:2;pointer-events:none;
+  -webkit-backdrop-filter:blur(3.4px) saturate(112%);
+  backdrop-filter:blur(3.4px) saturate(112%);
+  background:linear-gradient(105deg,rgba(255,255,255,.10) 0%,rgba(255,255,255,.03) 42%,
+    rgba(216,232,255,.07) 78%,rgba(255,255,255,.12) 100%)}
+.glass-inner{z-index:3}
+.glass-wall{z-index:4}
+.crack{z-index:5}
+#fxCanvas{z-index:6}
+/* 裂纹图：现在整面都是玻璃，所以裂纹**铺满整个瓶身正面**、撞击点在正中，
+   不再只画在两条侧壁竖带里（图片尺寸 = 瓶身设计尺寸 980×433，1:1，
+   object-fit:fill 贴回 .jar-box 时比例正好，不会被拉伸歪）。
+   图本身是白线（旧约定），浅色底下反过来用：invert 成深色线 + multiply 压进玻璃，
+   opacity 收到 .72 —— 整面裂的时候 .85 会把瓶身压成一张磨砂贴纸。 */
+.crack{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
+  opacity:0;transition:opacity .12s linear;
+  pointer-events:none;mix-blend-mode:multiply;filter:invert(1)}
+.crack.on{opacity:.72}
+
+/* 收回时的瓶内闪白：只罩住瓶身这一层（现在瓶身 = 整个上半区），不是全屏。
+   pointer-events:none + 纯 opacity 过渡，闪白期间输入照样能用。
+   浅色底下纯白对比不够，所以外圈带一圈偏蓝的光晕（也是色散的一部分）。
+   inset 收到 0：上下都被盖子/标签挡住，再往外扩只会被 .stage 裁掉。 */
+.jar-flash{position:absolute;inset:0;opacity:0;
+  pointer-events:none;z-index:7;transition:opacity .22s linear;
+  background:radial-gradient(60% 55% at 50% 46%,#fff 0%,rgba(255,255,255,.94) 52%,
+    rgba(150,195,255,.6) 76%,rgba(255,255,255,0) 100%);
+  box-shadow:0 0 60px rgba(0,102,255,.35)}
+/* 炸开的瓶子：盖子 = 上面那条界面（标题栏），它不参与动画；破罐的记号由
+   侧壁上沿那圈亮边（罐口缝）承担，收回后再亮回来（规则和 transition 都在
+   .glass-wall::after 上） */
+
+/* ------------------------------------------------------------------ 下半：交互区
+   玻璃皮、投影和虹彩描边都挪到这里：窗口上半区透明之后，
+   「有玻璃的地方」= 标题栏 + 这块面板。 */
+.panel{
+  position:relative; flex:1;min-height:0;display:flex;flex-direction:column;
+  padding:0;gap:0;overflow:hidden;
+  border-radius:0 0 var(--radius) var(--radius);
+  border:1px solid rgba(255,255,255,.72);border-top:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.78) 0%,rgba(255,255,255,.60) 100%);
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  backdrop-filter:blur(28px) saturate(180%);
+  box-shadow:0 24px 60px rgba(26,26,26,.16), 0 2px 8px rgba(26,26,26,.06),
+             inset 0 1px 0 rgba(255,255,255,.9);
+}
+/* 面板净高只有 243px（瓶身抬到 64% 之后），六行档位 + 桌宠大小 + 显示开关 + 收藏
+   + 状态行加起来远超，所以内容区自己滚、**部署那一行钉在底部不动** ——
+   滚多少都不会把主按钮顶出可视区（这正是当初把参数搬进设置弹层的原因）。
+   上下各留一条渐隐，看不出「被裁掉」而是「还有内容」。 */
+.panel-scroll{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;
+  scrollbar-color:rgba(26,26,26,.22) transparent;
+  display:flex;flex-direction:column;gap:8px;padding:13px 20px 10px;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 18px),rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 18px),rgba(0,0,0,0) 100%)}
+.panel-scroll::-webkit-scrollbar{width:6px}
+.panel-scroll::-webkit-scrollbar-thumb{background:rgba(26,26,26,.20);border-radius:99px}
+.panel>.foot{flex:0 0 auto;padding:10px 20px 14px;margin-top:auto;
+  border-top:1px solid var(--line);background:rgba(255,255,255,.50)}
+/* 虹彩描边：一条绕着面板缓慢转动的色带，只在边缘 1px 可见 */
+.panel::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:6;
+  padding:1px;background:conic-gradient(from var(--ir),
+    rgba(0,102,255,0),rgba(0,102,255,.55),rgba(150,190,255,.7),rgba(0,102,255,.1),rgba(0,102,255,0));
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  animation:irid 14s linear infinite;opacity:.7}
+.row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.row.slim{align-items:baseline;gap:10px;margin-bottom:-1px}
+.row.slim .note{white-space:normal}
+.label{width:78px;flex:0 0 78px;color:var(--sub);font-size:12px;letter-spacing:.4px}
+.label.sm{width:auto;flex:0 0 auto;color:var(--ink2)}
+.slider.narrow{min-width:150px;flex:0 0 190px}
+
+/* 进场：淡入 + 上移 16px，480ms，行间 100ms 错峰。
+   最后一行（.foot）只淡入不上移 —— 它贴着面板底边，下移 16px 会瞬间撑出
+   2px 滚动条（实测：design size 下 overflow 2 → 0）。 */
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes fade-in{from{opacity:0}to{opacity:1}}
+.win.show .panel-scroll>*{animation:rise .48s var(--ease) both}
+.win.show .panel>.foot{animation-name:fade-in}
+.win.show .panel-scroll>*:nth-child(1){animation-delay:0ms}
+.win.show .panel-scroll>*:nth-child(2){animation-delay:100ms}
+.win.show .panel-scroll>*:nth-child(3){animation-delay:200ms}
+.win.show .panel-scroll>*:nth-child(4){animation-delay:300ms}
+.win.show .panel-scroll>*:nth-child(5){animation-delay:400ms}
+.win.show .panel-scroll>*:nth-child(6){animation-delay:500ms}
+.win.show .panel-scroll>*:nth-child(7){animation-delay:600ms}
+
+/* 学习范围：一档一整行（长矩形），六档六行 —— 名称在左、词数在右、
+   选中记号钉在最右。原来是 96px 见方的块横着排，改成整行之后纵向占位涨了，
+   所以每行压到 30px 高（padding 5px + 单行文字），并且把每块自己的
+   backdrop-filter 去掉：面板本身已经是 28px 磨砂，再套六层嵌套模糊只掉帧，
+   视觉上没有区别。 */
+.modes{display:grid;grid-template-columns:1fr;gap:5px}
+.mode{
+  position:relative;width:100%;min-height:24px;padding:3px 26px 3px 11px;
+  border-radius:.75rem;cursor:pointer;
+  background:rgba(255,255,255,.55);border:1px solid var(--line);color:var(--ink2);
+  display:flex;align-items:baseline;gap:10px;
+  font:inherit;text-align:left;
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease),
+             border-color .2s var(--ease), background .2s var(--ease)}
+.mode:hover{border-color:var(--line2);background:rgba(255,255,255,.82);
+  transform:scale(1.01);box-shadow:0 8px 20px rgba(26,26,26,.08)}
+.mode:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mode b{font-size:13.5px;color:var(--hi);font-weight:600;flex:0 0 auto}
+.mode span{font-size:11px;color:var(--faint);font-family:var(--mono);margin-left:auto}
+.mode[aria-checked="true"]{
+  background:linear-gradient(90deg,rgba(0,102,255,.13),rgba(0,102,255,.04)),rgba(255,255,255,.8);
+  border-color:rgba(0,102,255,.5);color:var(--hi);
+  box-shadow:0 0 0 1px rgba(0,102,255,.22),0 6px 18px rgba(0,102,255,.12)}
+.mode[aria-checked="true"] b{color:var(--accent)}
+.mode[aria-checked="true"]::after{content:"";position:absolute;right:11px;top:50%;
+  width:7px;height:7px;border-radius:50%;background:var(--accent);transform:translateY(-50%);
+  box-shadow:0 0 8px rgba(0,102,255,.55)}
+.mode.na b{color:var(--faint)}
+.mode.na[aria-checked="true"]{border-color:rgba(178,115,21,.5);
+  box-shadow:0 0 0 1px rgba(178,115,21,.25);
+  background:linear-gradient(90deg,rgba(178,115,21,.13),rgba(178,115,21,.04)),rgba(255,255,255,.8)}
+.mode.na[aria-checked="true"] b{color:var(--warn)}
+.mode.na[aria-checked="true"]::after{background:var(--warn);box-shadow:0 0 8px rgba(178,115,21,.5)}
+
+.seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);
+  border-radius:.75rem;padding:3px;gap:3px;
+  -webkit-backdrop-filter:blur(12px) saturate(160%);
+  backdrop-filter:blur(12px) saturate(160%)}
+.seg button{font:inherit;border:0;background:transparent;color:var(--ink2);cursor:pointer;
+  padding:6px 13px;border-radius:var(--radius-sm);font-family:var(--mono);font-size:13px;
+  transition:transform .2s var(--ease), background .2s var(--ease), color .2s var(--ease)}
+.seg button:hover:not(:disabled){color:var(--hi);background:rgba(255,255,255,.85);transform:scale(1.03)}
+.seg button[aria-pressed="true"]{background:var(--accent-deep);color:#fff;font-weight:600}
+.seg button:disabled{color:rgba(74,74,74,.45);cursor:not-allowed;text-decoration:line-through}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{font-size:11px;color:var(--faint);white-space:nowrap}
+
+/* 矮屏（笔记本 1366×768、以及 in-app 预览那种 625px 高）：
+   仍然让瓶身占大头，只是从 64% 收到 58%，省出来的 40px 给面板；
+   面板自己滚 + 部署行钉底，所以再矮也不会把主按钮顶出可视区。 */
+@media (max-height:800px){
+  .stage{flex-basis:58%}
+  .panel-scroll{gap:7px;padding:10px 20px 8px}
+  .panel>.foot{padding:8px 20px 11px}
+  .row{gap:10px}
+  .mode{min-height:24px;padding:3px 26px 3px 11px}
+  .firstuse{font-size:11.5px;line-height:1.5}
+  .data{padding:5px 11px}
+}
+
+.slider{display:flex;align-items:center;gap:11px;min-width:250px;flex:1}
+input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:99px;flex:1;
+  background:linear-gradient(90deg,var(--accent) var(--p,50%),rgba(26,26,26,.14) var(--p,50%));outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;
+  background:#fff;border:2px solid var(--accent);cursor:pointer;
+  box-shadow:0 0 0 4px rgba(0,102,255,.12),0 2px 6px rgba(26,26,26,.18);
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease)}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.03);
+  box-shadow:0 0 0 7px rgba(0,102,255,.16),0 2px 8px rgba(26,26,26,.2)}
+input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:#fff;
+  border:2px solid var(--accent);cursor:pointer}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+output{min-width:34px;flex:0 0 auto;text-align:center;color:var(--accent);font-weight:600;
+  background:rgba(255,255,255,.7);border:1px solid var(--line2);border-radius:var(--radius-sm);
+  padding:2px 6px;font-size:12px;font-family:var(--mono)}
+
+input[type=number]{width:84px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:var(--radius-sm);padding:7px 9px;color:var(--text);font:inherit;font-size:13px;
+  font-family:var(--mono)}
+input[type=number]:focus{outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 2px rgba(0,102,255,.18)}
+
+.checks{display:flex;gap:8px;flex-wrap:wrap}
+.check{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;
+  background:var(--panel);border:1px solid var(--line);border-radius:.75rem;padding:7px 13px 7px 10px;
+  color:var(--ink2);font-size:13px;
+  -webkit-backdrop-filter:blur(12px) saturate(160%);
+  backdrop-filter:blur(12px) saturate(160%);
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease),
+             border-color .2s var(--ease), background .2s var(--ease), color .2s var(--ease)}
+.check:hover{border-color:var(--line2);background:var(--panel2);
+  transform:scale(1.03);box-shadow:0 10px 24px rgba(26,26,26,.10)}
+.check i{width:18px;height:18px;border-radius:50%;border:2px solid rgba(26,26,26,.28);
+  display:grid;place-items:center;transition:.2s var(--ease);flex:0 0 18px}
+.check i::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);
+  transform:scale(0);transition:transform .26s var(--spring)}
+.check[aria-checked="true"] i{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,102,255,.14)}
+.check[aria-checked="true"] i::after{transform:scale(1)}
+.check[aria-checked="true"]{color:var(--hi)}
+.check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.data{display:block;font-size:11.5px;color:var(--ink2);line-height:1.6;
+  background:rgba(255,255,255,.55);border:1px solid var(--line);border-radius:.75rem;padding:7px 12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.data b{color:var(--hi);font-weight:600;font-family:var(--mono)}
+.data .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;
+  vertical-align:1px;background:var(--green);box-shadow:0 0 8px rgba(46,139,98,.5)}
+.data .dot.na{background:var(--warn);box-shadow:0 0 8px rgba(178,115,21,.5)}
+.data .dot.bad{background:var(--bad);box-shadow:0 0 8px rgba(214,69,60,.5)}
+
+/* 我的收藏单词：主页只留这一条横滑的复习带（一行卡片高）。
+   参数行整体搬进「设置」弹层 —— 720px 设计尺寸下面板净高只有 257px，
+   再留一行参数就会把部署按钮顶出可视区（实测溢出 30px）。 */
+.words{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;min-height:0}
+.words-bar{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.words-count{font-family:var(--mono);font-size:11px;line-height:1.4;color:var(--faint)}
+.seg.small button{padding:3px 9px;font-size:12px}
+/* 横滑带：卡片一行高，超出部分靠右边缘那道渐隐提示可以滑（滚动条藏掉，
+   不然它自己就占 11px 高）。滚轮 / 触摸板 / 方向键都能滑。 */
+.words-list{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(176px,1fr);gap:8px;
+  overflow:auto hidden;overscroll-behavior-x:contain;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),rgba(0,0,0,0) 100%)}
+.words-list::-webkit-scrollbar{width:0;height:0}
+.words-list.as-empty{display:block;-webkit-mask-image:none;mask-image:none}
+.word{
+  display:flex;flex-direction:column;gap:2px;text-align:left;font:inherit;cursor:pointer;
+  padding:4px 9px;border-radius:.75rem;background:rgba(255,255,255,.62);border:1px solid var(--line);
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease), border-color .2s var(--ease)}
+.word:hover{transform:scale(1.03);border-color:var(--line2);background:var(--panel2);
+  box-shadow:0 10px 24px rgba(26,26,26,.10)}
+.word:active{transform:scale(.99)}
+.word:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.w-top{display:flex;align-items:baseline;gap:8px;line-height:1.25}
+.w-top b{font-size:14px;font-weight:600;color:var(--hi);letter-spacing:.2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w-due{margin-left:auto;flex:0 0 auto;font-style:normal;font-family:var(--mono);
+  font-size:10px;font-weight:600;line-height:1;color:var(--accent);
+  border:1px solid rgba(0,102,255,.35);border-radius:999px;padding:2px 5px;white-space:nowrap}
+.w-due.later{color:var(--ink2);border-color:var(--line2)}
+.w-due.done{color:var(--green);border-color:rgba(46,139,98,.45)}
+.w-bot{display:flex;align-items:center;gap:8px;line-height:1.2}
+.w-cn{flex:1;min-width:0;font-size:11px;color:var(--ink2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w-dots{display:flex;gap:3px;flex:0 0 auto}
+.w-dots i{width:8px;height:3px;border-radius:99px;background:rgba(26,26,26,.14);
+  transition:background .26s var(--ease)}
+.w-dots i.on{background:var(--accent)}
+.word.done .w-dots i.on{background:var(--green)}
+.words-empty{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:6px;padding:12px;text-align:center;
+  border:1px dashed var(--line2);border-radius:.75rem;color:var(--faint);font-size:11.5px}
+.words-empty b{font-size:13px;font-weight:600;color:var(--ink2)}
+
+.foot{margin-top:auto;display:flex;align-items:flex-end;gap:18px}
+.firstuse{font-size:12px;color:var(--ink2);line-height:1.7;max-width:430px}
+.firstuse b{color:var(--hi);font-weight:600}
+.firstuse u{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+.deploy{
+  margin-left:auto;min-width:240px;height:64px;border-radius:.75rem;cursor:pointer;font:inherit;
+  font-size:26px;font-weight:700;letter-spacing:8px;color:#fff;border:1px solid rgba(0,102,255,.65);
+  background:linear-gradient(180deg,#3D8BFD,#0066FF);
+  box-shadow:0 10px 26px rgba(0,102,255,.26), inset 0 1px 0 rgba(255,255,255,.45);
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease), filter .2s var(--ease)}
+.deploy:hover:not(:disabled){transform:scale(1.03);box-shadow:0 16px 34px rgba(0,102,255,.34)}
+.deploy:active:not(:disabled){transform:scale(.99)}
+.deploy:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.deploy:disabled{cursor:default;filter:grayscale(.45) opacity(.55);
+  box-shadow:none;letter-spacing:4px;font-size:18px;font-weight:600}
+/* 部署完成后同一颗按钮变红，写着「收回」；尺寸、字重、可聚焦性都不变 */
+.deploy.recall{color:#fff;border-color:rgba(214,69,60,.65);letter-spacing:8px;font-size:26px;font-weight:700;
+  background:linear-gradient(180deg,#E96A61,#D6453C);
+  box-shadow:0 10px 26px rgba(214,69,60,.26), inset 0 1px 0 rgba(255,255,255,.4)}
+.deploy.recall:hover:not(:disabled){transform:scale(1.03);
+  box-shadow:0 16px 34px rgba(214,69,60,.34)}
+.deploy.recall:focus-visible{outline-color:var(--bad)}
+.deploy.recall:disabled{box-shadow:none;letter-spacing:4px;font-size:18px;font-weight:600;
+  filter:grayscale(.4) opacity(.55)}   /* 收回进行中：仍然是红的，但明显按不动 */
+
+/* ------------------------------------------------------------------ 全屏层 */
+.flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:60;
+  transition:opacity .11s linear}
+
+.restore{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:70;
+  background:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.85);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  backdrop-filter:blur(24px) saturate(180%);
+  border-radius:var(--radius);padding:14px 20px;
+  display:none;gap:14px;align-items:center;box-shadow:0 20px 50px rgba(26,26,26,.18)}
+.restore.on{display:flex}
+.restore span{color:var(--sub);font-size:13px}
+.restore button{font:inherit;background:var(--accent);border:0;color:#fff;font-weight:600;
+  border-radius:var(--radius-sm);padding:8px 14px;cursor:pointer;
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease)}
+.restore button:hover{transform:scale(1.03);box-shadow:0 10px 22px rgba(0,102,255,.28)}
+.restore button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ------------------------------------------------------------------ 设置弹层 */
+.sheet-mask{position:fixed;inset:0;z-index:80;display:grid;place-items:center;
+  background:rgba(26,26,26,.22);
+  -webkit-backdrop-filter:blur(8px) saturate(120%);backdrop-filter:blur(8px) saturate(120%);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .3s var(--ease), visibility 0s linear .3s}
+.sheet-mask.on{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .3s var(--ease)}
+.sheet{
+  width:min(440px,92vw);max-height:86vh;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.80));
+  -webkit-backdrop-filter:blur(28px) saturate(180%);
+  backdrop-filter:blur(28px) saturate(180%);
+  border:1px solid rgba(255,255,255,.85);border-radius:var(--radius);
+  box-shadow:0 30px 80px rgba(26,26,26,.24), inset 0 1px 0 rgba(255,255,255,.9);
+  opacity:0;transform:translateY(16px) scale(.98);
+  transition:opacity .38s var(--ease), transform .38s var(--spring)}
+.sheet-mask.on .sheet{opacity:1;transform:none}
+.sheet-head{display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-bottom:1px solid var(--line)}
+.sheet-title{font-size:15px;font-weight:600;color:var(--hi);letter-spacing:.3px}
+.sheet-title em{display:block;font-style:normal;font-weight:400;font-size:11px;
+  color:var(--faint);margin-top:2px;letter-spacing:0}
+.sheet-head .close{margin-left:auto}
+.sheet-body{padding:16px;display:flex;flex-direction:column;gap:9px;overflow:auto}
+.sheet-body .row{gap:12px}
+.sheet-body .slider{min-width:200px}
+.hint,.note.wide{font-size:11px;color:var(--faint);line-height:1.5;padding-left:90px;white-space:normal}
+.sheet-foot{display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-top:1px solid var(--line);background:rgba(255,255,255,.5)}
+.sheet-foot .note{margin-right:auto;white-space:normal;font-size:10.5px;line-height:1.45;
+  font-family:var(--mono)}
+.ok{background:var(--accent-deep);border:0;color:#fff;font-family:inherit;font-size:13px;
+  font-weight:600;border-radius:var(--radius-sm);padding:8px 18px;cursor:pointer;
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease)}
+.ok:hover{transform:scale(1.03);box-shadow:0 10px 22px rgba(0,102,255,.28)}
+.ok:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 部署后的桌宠（模拟 PetWindow：无边框、透明、置顶） */
+.petwin{position:fixed;right:34px;bottom:26px;width:340px;height:250px;z-index:50;
+  opacity:0;transition:opacity .4s var(--ease);pointer-events:none}
+.petwin.on{opacity:1}
+.petwin canvas{width:100%;height:100%;display:block}
+.bubble{position:absolute;right:8px;bottom:170px;max-width:250px;
+  background:rgba(255,255,255,.9);color:var(--ink);border:1px solid rgba(255,255,255,.9);
+  border-radius:var(--radius);padding:8px 12px;font-size:12px;
+  -webkit-backdrop-filter:blur(16px) saturate(160%);
+  backdrop-filter:blur(16px) saturate(160%);
+  box-shadow:0 8px 20px rgba(26,26,26,.14);opacity:0;transform:translateY(6px);
+  transition:opacity .28s var(--ease), transform .28s var(--spring)}
+.bubble.on{opacity:1;transform:none}
+.bubble::after{content:"";position:absolute;right:34px;bottom:-6px;width:12px;height:12px;
+  background:rgba(255,255,255,.9);transform:rotate(45deg);border-radius:2px}
+.backbtn{position:fixed;right:22px;top:20px;z-index:70;display:none;
+  background:rgba(255,255,255,.72);border:1px solid rgba(255,255,255,.85);color:var(--ink2);
+  border-radius:.75rem;padding:7px 12px;font-size:12px;cursor:pointer;
+  -webkit-backdrop-filter:blur(18px) saturate(170%);
+  backdrop-filter:blur(18px) saturate(170%);
+  box-shadow:0 6px 18px rgba(26,26,26,.12);
+  transition:transform .2s var(--spring), box-shadow .2s var(--ease), color .2s var(--ease)}
+.backbtn.on{display:block}
+.backbtn:hover{color:var(--accent);border-color:rgba(0,102,255,.5);transform:scale(1.03);
+  box-shadow:0 10px 24px rgba(0,102,255,.16)}
+.backbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 减弱动效：关掉形变流体、虹彩、错峰进场与悬停缩放，只保留透明度 */
+@media (prefers-reduced-motion:reduce){
+  .desk::before,.desk::after,.panel::before{animation:none}
+  .win{transition:opacity .2s linear;transform:none}
+  .win.show .panel-scroll>*,.win.show .panel>.foot{animation:none}
+  .sheet{transition:opacity .2s linear;transform:none}
+  *{scroll-behavior:auto}
+  .mode:hover,.check:hover,.deploy:hover:not(:disabled),.deploy.recall:hover:not(:disabled),
+  .close:hover,.seg button:hover:not(:disabled),
+  .restore button:hover,.backbtn:hover,.word:hover,.gear:hover,.ok:hover,
+  .gear:hover svg,
+  input[type=range]::-webkit-slider-thumb:hover{transform:none}
+  .jar-wrap.shake-soft,.jar-wrap.shake-hard{animation:none}
+}
+</style>
+
+<style id="liquid-glass-polish">
+/* UI polish layer — visual/interaction only. Core DOM ids, state classes and timelines are untouched. */
+:root{
+  --morph-duration:520ms;
+  --blur-amount:15px;
+  --smooth:420ms;
+  --smooth-fast:260ms;
+  --glass-edge:rgba(255,255,255,.78);
+  --glass-shadow:0 28px 80px rgba(26,26,26,.15),0 8px 24px rgba(26,26,26,.07);
+  --chromatic:linear-gradient(105deg,rgba(0,102,255,.18),rgba(255,255,255,0) 34%,rgba(214,69,60,.10) 76%,rgba(255,255,255,.18));
+}
+html{scroll-behavior:smooth}
+button,input{font:inherit}
+button{touch-action:manipulation;cursor:pointer}
+button:disabled{cursor:not-allowed}
+button:focus-visible,input:focus-visible{
+  outline:2px solid rgba(0,102,255,.72);
+  outline-offset:3px;
+}
+.titlebar,.panel,.sheet,.restore,.bubble,.backbtn{
+  box-shadow:var(--glass-shadow);
+}
+.titlebar::after{
+  content:"";position:absolute;inset:1px;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(115deg,rgba(255,255,255,.38),rgba(255,255,255,0) 34%,rgba(255,255,255,.14) 62%,rgba(255,255,255,0) 78%);
+  opacity:.55;mix-blend-mode:screen;
+}
+.titlebar{position:relative;overflow:hidden}
+.titlebar .win-title,.titlebar .chip-status,.titlebar .gear,.titlebar .close{position:relative;z-index:2}
+.panel{
+  background:
+    linear-gradient(135deg,rgba(255,255,255,.84),rgba(255,255,255,.52) 54%,rgba(231,241,255,.50)),
+    radial-gradient(520px 240px at 92% 0%,rgba(0,102,255,.10),transparent 68%);
+}
+.panel-scroll{overscroll-behavior:contain;scroll-behavior:smooth}
+.mode,.check,.word,.seg button,.gear,.close,.deploy,.ok,.restore button,.backbtn{
+  will-change:transform;
+}
+.mode::before,.word::before,.check::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(120deg,rgba(255,255,255,.46),rgba(255,255,255,0) 44%,rgba(0,102,255,.07));
+  opacity:0;transition:opacity var(--smooth-fast) cubic-bezier(.4,0,.2,1);
+}
+.mode,.word,.check{position:relative;overflow:hidden}
+.mode:hover::before,.word:hover::before,.check:hover::before{opacity:1}
+.mode:active,.word:active,.check:active,.seg button:active,.gear:active,.close:active{
+  transform:scale(.975);
+}
+.mode[aria-checked="true"]{
+  background:
+    linear-gradient(100deg,rgba(0,102,255,.16),rgba(255,255,255,.54) 48%,rgba(0,102,255,.04)),
+    rgba(255,255,255,.72);
+}
+.mode[aria-checked="true"]::before{
+  opacity:1;
+  background:linear-gradient(100deg,rgba(255,255,255,.48),rgba(255,255,255,0) 52%,rgba(0,102,255,.10));
+}
+.check[aria-checked="true"]{
+  background:linear-gradient(105deg,rgba(0,102,255,.10),rgba(255,255,255,.58));
+}
+.deploy{
+  position:relative;overflow:hidden;
+  isolation:isolate;
+  transition:
+    transform var(--smooth-fast) cubic-bezier(.34,1.32,.64,1),
+    box-shadow var(--smooth-fast) cubic-bezier(.4,0,.2,1),
+    filter var(--smooth-fast) cubic-bezier(.4,0,.2,1);
+}
+.deploy::before{
+  content:"";position:absolute;z-index:-1;inset:-35%;
+  background:conic-gradient(from 0deg,rgba(255,255,255,.0),rgba(255,255,255,.48),rgba(255,255,255,0) 28%);
+  animation:buttonSheen 5.5s linear infinite;
+  transform:translateX(-28%) rotate(8deg);
+}
+.deploy:hover:not(:disabled)::before{animation-duration:2.8s}
+@keyframes buttonSheen{
+  to{transform:translateX(28%) rotate(8deg)}
+}
+.gear svg{transform-origin:50% 50%}
+.gear:hover svg{transition:transform 420ms cubic-bezier(.34,1.32,.64,1)}
+.sheet-mask{
+  transition:opacity var(--smooth) cubic-bezier(.4,0,.2,1),visibility 0s linear var(--smooth);
+}
+.sheet{
+  transition:
+    opacity var(--smooth) cubic-bezier(.4,0,.2,1),
+    transform var(--smooth) cubic-bezier(.34,1.32,.64,1);
+}
+.sheet-mask.on .sheet{transform:translateY(0) scale(1)}
+.jar-box::after{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:linear-gradient(108deg,rgba(255,255,255,.18),transparent 22%,transparent 68%,rgba(255,255,255,.10));
+  mix-blend-mode:screen;opacity:.45;
+}
+.data{
+  background:
+    linear-gradient(100deg,rgba(255,255,255,.56),rgba(255,255,255,.36)),
+    radial-gradient(180px 60px at 95% 50%,rgba(0,102,255,.07),transparent 70%);
+}
+.words-list{scroll-snap-type:x proximity}
+.word{scroll-snap-align:start}
+@media (max-width:920px){
+  .win{width:min(96vw,1060px)}
+  .panel-scroll{padding-left:15px;padding-right:15px}
+}
+@media (max-width:680px){
+  .win{width:calc(100vw - 20px);height:calc(100vh - 20px)}
+  .titlebar{padding:0 10px}
+  .win-title em,.chip-status{display:none}
+  .panel-scroll{padding:10px 12px 8px}
+  .row{gap:8px}
+  .label{width:68px;flex-basis:68px}
+  .slider.narrow{min-width:120px;flex-basis:150px}
+  .foot{gap:10px}
+  .firstuse{max-width:50%}
+  .deploy{min-width:180px;height:58px;font-size:22px;letter-spacing:4px}
+}
+@media (prefers-reduced-motion:reduce){
+  .deploy::before{animation:none}
+  .panel-scroll{scroll-behavior:auto}
+}
+</style>
+
+</head>
+<body>
+<div class="desk" id="desk">
+
+  <div class="win" id="launcher">
+    <div class="titlebar" id="titlebar">
+      <div class="win-title">八足微光 · 启动台<em>CET Spider — 桌宠识词</em></div>
+      <div class="chip-status" id="statusChip"><b></b><span id="statusText">引擎就绪 · 全离线</span></div>
+      <button class="gear" id="btnSettings" aria-haspopup="dialog" aria-expanded="false"
+              aria-controls="sheetMask" title="设置" aria-label="设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true" stroke-linecap="round" stroke-width="1.9">
+          <circle cx="12" cy="12" r="3.7"/>
+          <path d="M18.2 12h2.4M16.38 16.38l1.7 1.7M12 18.2v2.4M7.62 16.38l-1.7 1.7M5.8 12H3.4M7.62 7.62L5.92 5.92M12 5.8V3.4M16.38 7.62l1.7-1.7"/>
+        </svg>
+      </button>
+      <button class="close" id="btnClose" title="关闭启动台">✕</button>
+    </div>
+
+    <div class="body">
+      <!-- ============================ 上半：玻璃罐展示区 ============================ -->
+      <section class="stage" id="stage">
+        <div class="stage-tag" id="stageTag">Jar · 部署前</div>
+        <div class="stage-tip" id="stageTip">阈值步态 + 两骨 IK · 点一下让它跳</div>
+        <div class="jar-wrap" id="jarWrap">
+          <div class="jar-box" id="jarBox">
+            <!-- 层序 = 从前到后反过来排：蜘蛛在最底，先被磨砂面糊一层，
+                 再是瓶底/侧壁这些玻璃本体，裂纹和碎片贴在最外表面，闪白盖顶。 -->
+            <canvas class="layer" id="spiderCanvas"></canvas>
+            <div class="glass-face" id="glassFace"></div>
+            <div class="glass-inner"></div>
+            <div class="glass-wall l"></div>
+            <div class="glass-wall r"></div>
+            <img class="crack" id="crack1" src="jar_crack_01.png" alt="">
+            <img class="crack" id="crack2" src="jar_crack_02.png" alt="">
+            <img class="crack" id="crack3" src="jar_crack_03.png" alt="">
+            <canvas class="layer" id="fxCanvas"></canvas>
+            <div class="jar-flash" id="jarFlash"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ 下半：交互区（内容滚动，部署行钉底） ============================ -->
+      <section class="panel">
+        <div class="panel-scroll" id="panelScroll">
+          <div class="row slim">
+            <div class="label sm">学习范围</div>
+            <div class="note">词数取自考纲标签表 · 一档一整行</div>
+          </div>
+          <div class="modes" id="modes" role="radiogroup" aria-label="学习范围"></div>
+
+          <div class="row">
+            <div class="label sm">桌宠大小</div>
+            <div class="slider narrow"><input type="range" id="petScale" min="0.6" max="2" step="0.05" value="1"><output id="petScaleOut">1.00</output></div>
+            <div class="label sm">显示</div>
+            <div class="checks" id="checks"></div>
+          </div>
+
+          <!-- 收藏单词：真机读 words 表（word / 释义 / stage / due），这里是演示数据 -->
+          <section class="words" aria-labelledby="wordsTitle">
+            <header class="words-bar">
+              <div class="label" id="wordsTitle">我的收藏</div>
+              <div class="words-count" id="wordsCount">—</div>
+              <div class="seg small" id="wordsFilter" role="group" aria-label="复习筛选">
+                <button data-f="all" aria-pressed="true">全部</button>
+                <button data-f="due" aria-pressed="false">待复习</button>
+              </div>
+            </header>
+            <div class="words-list" id="wordsList" role="group"
+                 aria-label="收藏单词，点一下记一次复习"></div>
+          </section>
+
+          <div class="data" id="dataLine"></div>
+        </div>
+
+        <div class="foot">
+          <div class="firstuse">
+            <b id="firstUseTag">首次使用</b><span id="firstUseBody">：部署后蜘蛛落在屏幕右下角 —— <u>点它的头</u>框选识词，<u>按住肚子</u>拖动，滚轮缩放，右键菜单。
+            收藏的词按 <u>1 / 3 / 7 / 14 天</u>间隔复习。</span>
+          </div>
+          <button class="deploy" id="btnDeploy">部 署</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ==================== 设置：只留识别参数（桌宠大小和显示开关已搬回主界面） ==================== -->
+  <div class="sheet-mask" id="sheetMask">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-head">
+        <div class="sheet-title" id="sheetTitle">设置<em>改动即时写入 settings 表</em></div>
+        <button class="close" id="btnSheetClose" title="关闭设置">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="row">
+          <div class="label">识别引擎</div>
+          <div class="seg" id="ocrSeg" role="group" aria-label="OCR 引擎">
+            <button data-key="rapid" aria-pressed="true">RapidOCR</button>
+            <button data-key="paddle" aria-pressed="false" disabled>PaddleOCR</button>
+          </div>
+        </div>
+        <div class="note wide" id="ocrNote">本机 ONNX Runtime · 纯离线</div>
+
+        <div class="row">
+          <div class="label">最大识词</div>
+          <div class="slider"><input type="range" id="maxWords" min="1" max="8" step="1" value="8"><output id="maxWordsOut">8</output></div>
+        </div>
+        <div class="hint">一次框选最多收进几个词。收得越多，蜘蛛落地的腿越多。</div>
+
+        <div class="row">
+          <div class="label">最小置信度</div>
+          <input type="number" id="minConf" min="0.5" max="0.99" step="0.01" value="0.80">
+        </div>
+        <div class="hint">低于这个识别分数的结果直接丢掉，不进词表。</div>
+      </div>
+      <div class="sheet-foot">
+        <span class="note">键名：ocr_engine / max_words / min_conf　·　pet_scale 与三个显示开关在主界面</span>
+        <button class="ok" id="btnSheetOk">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <div class="petwin" id="petwin">
+    <div class="bubble" id="bubble">部署完成 · 点头识词，拖肚子移动</div>
+    <canvas id="petCanvas"></canvas>
+  </div>
+
+  <button class="backbtn" id="btnBack">← 回到启动台</button>
+  <div class="restore" id="restore"><span id="restoreText">启动台已关闭。</span><button id="btnRestore">重新启动台</button></div>
+</div>
+
+<script>
+/* =====================================================================
+   1. 程序化蜘蛛 —— 逐参数移植自 src/crawler_spider.py（不改数值）
+   ===================================================================== */
+const CS = {
+  BASE_SCALE: 1.45,
+  LEG_DEF: [[0.55,118,7],[1.15,106,3],[1.95,106,-1],[2.55,126,-5],[0.22,38,10]],
+  STEP_FRAC:.30, URGENT_FRAC:.50, OVER_FRAC:.92, PLACE_FRAC:.85,
+  STEP_DUR:[.10,.17], STEP_DUR_QUICK:[.07,.11],
+  MAX_STEPPING_SLOW:4, MAX_STEPPING_FAST:6, STEP_SPEED_FAST:70,
+  LEAD_SECONDS:.30, LEAD_MAX_FRAC:.30, VELOCITY_DAMP:5,
+  HEAD_OFF:12, ABD_OFF:-17, SPIN_OFF:-13, HIP_SIDE:3, REST_K:.8,
+  THORAX:[-8,-5.5,18,11], THORAX_SCALE:1.25,
+  MODE_SPREAD:{idle:1,crawl:1,think:1.06,rest:.55,jump:.40},
+  /* 八腿aura：规范色板内的蓝→石墨虹彩梯度（只在瞄准高亮时用） */
+  LEG_AURA:["#0066FF","#2E7DF7","#5C9DFF","#8FB9FF","#4A4A4A","#2B2B2B","#1A1A1A","#A8C6F0"],
+  /* 浅色玻璃上不能靠霓虹发光，改用「白描边 + 深色内芯」：
+     bodyFill 是 1.9 倍宽的浅色外壳（把腿从罐壁里托出来），leg 是深色内芯。 */
+  C:{leg:"#1A1A1A",legHi:"#0066FF",joint:"#0066FF",body:"#1A1A1A",bodyFill:"#FFFFFF",web:[74,74,74]}
+};
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
+const rnd=()=>Math.random();
+/* 实测阈值：局部坐标下身体超过约 0.33 单位/帧，腿就追不上静止位（十腿齐迈 + 硬拉越界） */
+const GAIT_MAX_LOCAL_PER_FRAME=0.30;
+
+class Spider{
+  constructor(size=1){
+    this.size=size; this.scale=CS.BASE_SCALE*size; this.mode="idle";
+    this.heading=Math.PI/2;                 // 与 crawler.js 一致：默认朝下
+    this.speed=0; this.travel=[0,0]; this.velocity=[0,0]; this.legs=[];
+    let stepper=0, s=this.scale;
+    for(const side of [1,-1]) for(let slot=0;slot<CS.LEG_DEF.length;slot++){
+      const [ang,reach,hip]=CS.LEG_DEF[slot], r=reach*s;
+      const aura = slot===4 ? CS.C.legHi : CS.LEG_AURA[stepper%8];
+      if(slot<4) stepper++;
+      this.legs.push({
+        index:this.legs.length, side, slot, ang:ang*side, reach:r,
+        hip:hip*s, hipY:side*CS.HIP_SIDE*s, hipPos:[hip*s, side*CS.HIP_SIDE*s],
+        l1:r*.56, l2:r*.64, bend:(slot===3||slot===4?1:-1)*side, palp:slot===4,
+        aura, foot:null, nxt:null, frm:null, t:0, dur:.15, stepping:false
+      });
+    }
+    this.body={head:[CS.HEAD_OFF*s,0], abd:[CS.ABD_OFF*s,0], spin:[(CS.ABD_OFF+CS.SPIN_OFF)*s,0]};
+    for(const L of this.legs){              // 先落一只脚在静止位，否则步态永不启动
+      const k=L.palp?1:CS.REST_K, r=L.reach*k;
+      L.foot=[L.hip+Math.cos(L.ang)*r, L.hipY+Math.sin(L.ang)*r];
+    }
+  }
+  spread(){ return CS.MODE_SPREAD[this.mode] ?? 1 }
+  restPos(L){
+    let k=(L.palp?1:CS.REST_K)*this.spread(), r=L.reach*k;
+    return [L.hip+Math.cos(L.ang)*r, L.hipY+Math.sin(L.ang)*r];
+  }
+  advance(dx,dy){                            // 身体在世界里移动 → 局部坐标反向平移
+    for(const L of this.legs) for(const key of ["foot","nxt","frm"]){
+      if(L[key]) L[key]=[L[key][0]-dx, L[key][1]-dy];
+    }
+    this.travel=[this.travel[0]-dx, this.travel[1]-dy];
+    if(Math.abs(this.travel[0])>300||Math.abs(this.travel[1])>300){
+      const sh=this.travel; this.travel=[0,0];
+      for(const L of this.legs) for(const key of ["foot","nxt","frm"]){
+        if(L[key]) L[key]=[L[key][0]+sh[0], L[key][1]+sh[1]];
+      }
+    }
+  }
+  footNow(L){
+    if(L.stepping&&L.frm&&L.nxt){
+      const e=smooth(L.t);
+      let fx=L.frm[0]+(L.nxt[0]-L.frm[0])*e, fy=L.frm[1]+(L.nxt[1]-L.frm[1])*e;
+      const lift=Math.sin(Math.PI*L.t)*.18;  // 迈步时向髋部收 18%：真抬腿
+      fx+=(L.hip-fx)*lift; fy+=(L.side*CS.HIP_SIDE-fy)*lift;
+      return [fx,fy];
+    }
+    return L.foot||this.restPos(L);
+  }
+  static solveIk(hip,foot,l1,l2,bend){
+    const dx=foot[0]-hip[0], dy=foot[1]-hip[1], d=Math.hypot(dx,dy), base=Math.atan2(dy,dx);
+    if(d>=l1+l2-0.01) return [hip[0]+Math.cos(base)*l1, hip[1]+Math.sin(base)*l1];
+    const c=clamp((l1*l1+d*d-l2*l2)/(2*l1*Math.max(d,1e-6)),-1,1), b=base+bend*Math.acos(c);
+    return [hip[0]+Math.cos(b)*l1, hip[1]+Math.sin(b)*l1];
+  }
+  neighbourStepping(L){
+    return this.legs.some(o=>o.stepping&&o.side===L.side&&Math.abs(o.slot-L.slot)===1);
+  }
+  stepTarget(L){                             // 落脚点 = 静止位 + 速度前瞻（无随机抖动）
+    const [hx,hy]=L.hipPos, [rx,ry]=this.restPos(L);
+    let lx=rx+this.velocity[0]*CS.LEAD_SECONDS, ly=ry+this.velocity[1]*CS.LEAD_SECONDS;
+    const ahead=Math.hypot(lx-rx,ly-ry);
+    if(ahead>L.reach*CS.LEAD_MAX_FRAC){
+      const k=(L.reach*CS.LEAD_MAX_FRAC)/ahead; lx=rx+(lx-rx)*k; ly=ry+(ly-ry)*k;
+    }
+    let tx=hx+(lx-hx), ty=hy+(ly-hy), d=Math.hypot(tx-hx,ty-hy);
+    const limit=(L.l1+L.l2)*CS.PLACE_FRAC;
+    if(d>limit&&d>1e-6){ tx=hx+(tx-hx)/d*limit; ty=hy+(ty-hy)/d*limit }
+    return [tx,ty];
+  }
+  startStep(L,quick){
+    L.frm=this.footNow(L); L.nxt=this.stepTarget(L);
+    const [lo,hi]=quick?CS.STEP_DUR_QUICK:CS.STEP_DUR;
+    L.dur=lo+rnd()*(hi-lo); L.t=0; L.stepping=true;
+  }
+  plant(L){ L.foot=L.nxt; L.stepping=false; L.t=0 }
+  update(dt,mode,speed,motion=[0,0]){
+    if(mode) this.mode=mode;
+    if(speed!=null) this.speed=speed;
+    if(motion[0]||motion[1]){
+      this.advance(motion[0],motion[1]);
+      const damp=1-Math.exp(-CS.VELOCITY_DAMP*dt);
+      /* 注意符号：局部坐标随身体一起平移，身体在世界里往 +x 走，
+         落脚点的「前瞻」方向也是 +x —— 所以速度取 +motion/dt。
+         （crawler_spider.py 里取的是 -motion/dt，会让朝向指到屁股后面、
+           前瞻把脚落在身体后方，即「倒着走」。这里按正确的符号实现。） */
+      this.velocity=[
+        this.velocity[0]+(motion[0]/Math.max(dt,1e-4)-this.velocity[0])*damp,
+        this.velocity[1]+(motion[1]/Math.max(dt,1e-4)-this.velocity[1])*damp];
+      const sp=Math.hypot(...this.velocity);   // 朝向跟随速度
+      if(sp>6){
+        let d=Math.atan2(this.velocity[1],this.velocity[0])-this.heading;
+        while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+        this.heading+=d*(1-Math.exp(-(4+sp*.02)*dt));
+      }
+    } else { this.velocity=[0,0] }
+
+    let count=this.legs.filter(L=>L.stepping).length;
+    const maxStepping=this.speed>CS.STEP_SPEED_FAST?CS.MAX_STEPPING_FAST:CS.MAX_STEPPING_SLOW;
+
+    for(const L of this.legs){
+      if(this.mode==="jump"){                 // 腾空：腿收拢跟身，不做迈步判定
+        L.stepping=false; const f=this.restPos(L);
+        L.tip=f; L.knee=Spider.solveIk(L.hipPos,f,L.l1,L.l2,L.bend); continue;
+      }
+      if(L.stepping){ L.t+=dt/Math.max(L.dur,1e-6); if(L.t>=1){ L.foot=L.nxt; L.stepping=false; L.t=0 } }
+      else{
+        const rest=this.restPos(L), cur=L.foot||rest;
+        const off=Math.hypot(cur[0]-rest[0],cur[1]-rest[1]);
+        const [hx,hy]=L.hipPos, reachHere=Math.hypot(cur[0]-hx,cur[1]-hy);
+        const full=L.l1+L.l2, over=reachHere>full*CS.OVER_FRAC, urgent=off>L.reach*CS.URGENT_FRAC;
+        const thresh=L.reach*(L.palp?.25:CS.STEP_FRAC);
+        if(over) this.startStep(L,true);
+        else if(urgent&&!this.neighbourStepping(L)) this.startStep(L,true);
+        else if(off>thresh&&count<maxStepping&&!this.neighbourStepping(L)) this.startStep(L,false);
+        count=this.legs.filter(x=>x.stepping).length;
+      }
+      const f=this.footNow(L);
+      L.tip=f; L.knee=Spider.solveIk(L.hipPos,f,L.l1,L.l2,L.bend);
+    }
+  }
+}
+
+/* 渲染 helper 一律按 (颜色字符串, alpha) 两个参数传，别再用元组 */
+function hex2rgb(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)]}
+const rgba=(h,a)=>{const [r,g,b]=typeof h==="string"&&h.startsWith("#")?hex2rgb(h):h;return `rgba(${r},${g},${b},${a})`};
+
+function drawSpider(ctx,sp,o){
+  const unit=o.unit, dim=clamp(o.dim??1,.2,1), glow=clamp(o.glow??1,0,1), aiming=!!o.aiming;
+  const cos=Math.cos(o.heading), sin=Math.sin(o.heading);
+  const S=p=>{const X=p[0]*unit,Y=p[1]*unit;return [o.x+X*cos-Y*sin, o.y+X*sin+Y*cos]};
+  const seg=(a,b,col,alpha,w)=>{ctx.strokeStyle=rgba(col,alpha);ctx.lineWidth=w;ctx.lineCap="round";
+    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke()};
+  const dot=(p,r,col,alpha)=>{ctx.fillStyle=rgba(col,alpha);ctx.beginPath();ctx.arc(p[0],p[1],r,0,7);ctx.fill()};
+  const lw=1.25*Math.sqrt(CS.BASE_SCALE)*unit, dr=Math.pow(CS.BASE_SCALE,.6)*unit;
+
+  /* 连接线：腹部 → 同侧 1/3 号腿髋部（原版就有） */
+  const abd=S(sp.body.abd);
+  for(const L of sp.legs) if(!L.palp&&L.slot%2===0)
+    seg(abd,S(L.hipPos),CS.C.web,115/255*dim,Math.max(.6,lw*.66));
+
+  /* 腿：深色外描边 + 亮色内芯（浅底深底都看得见） */
+  for(const L of sp.legs){
+    const hip=S(L.hipPos), knee=S(L.knee), foot=S(L.tip);
+    const w=lw*(L.palp?.75:1), lit=aiming&&!L.palp;
+    if(lit) for(const [k,a] of [[3.2,16],[2,34],[1.25,64]]){
+      seg(hip,knee,L.aura,a/255*dim,w*k); seg(knee,foot,L.aura,a/255*dim,w*k);
+    }
+    seg(hip,knee,CS.C.bodyFill,dim*.55,Math.max(1.4,w*1.9));
+    seg(knee,foot,CS.C.bodyFill,dim*.55,Math.max(1.4,w*1.9));
+    const base=lit?L.aura:CS.C.leg;
+    seg(hip,knee,base,dim,Math.max(1.2,w*1.35));
+    seg(knee,foot,L.slot===3&&!L.palp?CS.C.legHi:base,dim,Math.max(1.2,w*1.35));
+    if(lit){const R=3.4*(L.palp?1.5:2)*dr, g=ctx.createRadialGradient(knee[0],knee[1],0,knee[0],knee[1],R);
+      g.addColorStop(0,rgba(L.aura,.7*dim*glow));g.addColorStop(1,rgba(L.aura,0));
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(knee[0],knee[1],R,0,7);ctx.fill()}
+    dot(knee,(L.palp?1.5:2)*dr,lit?L.aura:CS.C.joint,(.55+.45*glow)*dim);
+    dot(foot,(L.palp?1.3:1.8)*dr,lit?L.aura:CS.C.joint,dim);
+  }
+
+  /* 身体点链 + 头胸矩形 */
+  const p=S([0,0]), head=S(sp.body.head), spin=S(sp.body.spin);
+  seg(head,p,CS.C.body,dim,Math.max(.8,lw*.9));
+  seg(p,abd,CS.C.leg,dim,lw*1.15);
+  seg(abd,spin,CS.C.leg,dim,lw);
+
+  ctx.save(); ctx.translate(p[0],p[1]); ctx.rotate(o.heading);
+  const ts=unit*CS.THORAX_SCALE, [rx,ry,rw,rh]=CS.THORAX;
+  const cx=rx*ts+rw*ts/2, cy=ry*ts+rh*ts/2;
+  const halo=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(rw,rh)*ts*1.15);
+  halo.addColorStop(0,rgba(CS.C.leg,.34*dim));halo.addColorStop(.6,rgba(CS.C.leg,.12*dim));halo.addColorStop(1,rgba(CS.C.leg,0));
+  ctx.fillStyle=halo;ctx.beginPath();ctx.ellipse(cx,cy,rw*ts*1.15,rh*ts*1.7,0,0,7);ctx.fill();
+  ctx.strokeStyle=rgba(CS.C.body,dim);ctx.lineWidth=Math.max(1.6,lw*1.5);
+  ctx.fillStyle=CS.C.bodyFill;ctx.fillRect(rx*ts,ry*ts,rw*ts,rh*ts);ctx.strokeRect(rx*ts,ry*ts,rw*ts,rh*ts);
+  ctx.restore();
+
+  if(o.focus) for(const [pt,mul] of [[sp.body.head,2.2],[sp.body.abd,2.8]]){
+    const q=S(pt), r=mul*dr*4;
+    const g=ctx.createRadialGradient(q[0],q[1],0,q[0],q[1],r);
+    g.addColorStop(0,rgba(CS.C.joint,.75*dim*glow));g.addColorStop(1,rgba(CS.C.joint,0));
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(q[0],q[1],r,0,7);ctx.fill();
+  }
+  dot(head,2.2*dr,CS.C.joint,dim); dot(abd,2.8*dr,CS.C.joint,dim); dot(spin,2*dr,CS.C.joint,dim);
+}
+
+/* =====================================================================
+   2. 罐内 / 桌宠：一个循环行走的宿主
+   ===================================================================== */
+function fitCanvas(cv){
+  const dpr=window.devicePixelRatio||1, r=cv.getBoundingClientRect();
+  cv.width=Math.max(1,r.width*dpr); cv.height=Math.max(1,r.height*dpr);
+  cv.getContext("2d").setTransform(dpr,0,0,dpr,0,0);
+  return r;
+}
+const unitForWidth=w=>w/(2*126*CS.BASE_SCALE*CS.REST_K);   // 与 SpiderPainter.unit_for_width 一致
+
+/* 罐内宿主：沿小范围水平路径循环行走，到边缘翻转朝向（朝向由速度自己带过去）。 */
+class JarSpider{
+  constructor(cv){
+    this.cv=cv; this.ctx=cv.getContext("2d"); this.sp=new Spider(1);
+    this.reset();
+  }
+  reset(){
+    this.x=null; this.dir=1; this.pause=.5; this.jump=null;
+    this.burst=null; this.drop=null; this.hidden=false; this.prevLift=0; this.alpha=1;
+  }
+  layout(rect){
+    this.rect=rect;
+    /* 俯视蜘蛛的腿是四周散开的：跨距同时受瓶身宽和高约束，脚才不会戳出玻璃。
+       现在瓶身 = 整个上半区（宽 min(980px,94%)），横向早就不是限制项了，
+       min() 实际由**高度**决定 → 蜘蛛大小跟着瓶子的高度走，
+       变宽只让它有多余的横向余地，体不会撑破玻璃。 */
+    this.unit=unitForWidth(Math.min(rect.width*.52, rect.height*.62));
+    /* 体心离底边要留出腿的可达半径，否则下缘那几条脚会踩到标签上沿（= 瓶子底）。 */
+    const reach=CS.BASE_SCALE*126*this.unit*CS.REST_K;
+    this.reach=reach;
+    this.ground=Math.min(rect.height*.58, rect.height-reach-rect.height*.03);
+    this.lo=rect.width*.30; this.hi=rect.width*.70;
+    this.x=this.x==null?(this.lo+this.hi)/2:clamp(this.x,this.lo,this.hi);
+    /* 速度上限来自实测：身体在局部坐标下超过约 0.33 单位/帧时，腿追不上静止位，
+       会退化成「十腿齐迈 + 硬拉越界」。取 0.30 留一点余量，步态才干净。
+       注意这是**局部单位**，所以瓶子放大后像素速度同比放大、步态依旧成立 ——
+       代价只是单趟行走时间变长（体相对速度没变）。 */
+    this.speed=GAIT_MAX_LOCAL_PER_FRAME*60*this.unit;
+  }
+  hop(){ this.jump={t:0,dur:.6,arc:58,vx:(this.dir||1)*this.speed*1.6} }
+  burstOut(){ this.burst={t:0,dur:.55}; this.prevLift=0 }
+  /* 收回：闪白之后从罐口上方落回来。重力感用 u² 加速，腿收拢（jump 模式），
+     落到位立刻恢复阈值步态。
+     落点上限收到瓶口内侧（罐高 4%）：瓶身现在顶到盖子底下，
+     再往上就掉到窗口外面去了，会「凭空出现」而不是从罐口落进来。 */
+  returnIn(){
+    if(!this.rect) return;
+    this.reset();
+    this.layout(this.rect);
+    this.drop={t:0,dur:.42,
+      top:Math.max(this.ground-this.rect.height*.62, this.rect.height*.04)};
+    this.hidden=false; this.alpha=.55; this.lastY=this.drop.top;
+  }
+  tick(dt){
+    if(!this.rect) return;
+    /* ---- 收回：从罐口上方落回地面 ---- */
+    if(this.drop){
+      this.drop.t+=dt;
+      const u=clamp(this.drop.t/this.drop.dur,0,1);
+      const y=this.drop.top+(this.ground-this.drop.top)*u*u;   // u² = 加速下坠
+      const dy=y-this.lastY; this.lastY=y;
+      this.sp.update(dt,"jump",0,[0,dy/this.unit]);
+      this.y=y; this.alpha=.55+.45*u;
+      if(u>=1){ this.drop=null; this.alpha=1; this.pause=.35; this.prevLift=0 }
+      return;
+    }
+    /* ---- 冲出：向上大弧 + 腿收拢（jump 模式），不阻塞主循环 */
+    if(this.burst){
+      this.burst.t+=dt;
+      const u=clamp(this.burst.t/this.burst.dur,0,1);
+      const lift=-this.rect.height*.6*smooth(u);
+      const dLift=lift-this.prevLift; this.prevLift=lift;
+      this.sp.update(dt,"jump",0,[Math.sin(u*9)*this.speed*.4*dt/this.unit, dLift/this.unit]);
+      this.y=this.ground+lift; this.alpha=1-u*.5; this.hidden=u>=1;
+      return;
+    }
+    let px=0, lift=0, mode="crawl", speed=0;
+    this.alpha=1;
+    if(this.jump){
+      this.jump.t+=dt; const u=clamp(this.jump.t/this.jump.dur,0,1);
+      lift=-this.jump.arc*4*u*(1-u); mode="jump"; px=this.jump.vx*dt; speed=Math.abs(this.jump.vx);
+      if(u>=1) this.jump=null;
+    }else if(this.pause>0){ this.pause-=dt; mode="idle" }
+    else{
+      px=this.dir*this.speed*dt; speed=this.speed;
+      if(this.x+px>this.hi){this.x=this.hi;this.dir=-1;this.pause=1.2}
+      else if(this.x+px<this.lo){this.x=this.lo;this.dir=1;this.pause=1.2}
+      if(Math.random()<.0012) this.pause=.8;      // 偶尔驻足
+    }
+    this.x=clamp(this.x+px,this.lo,this.hi);
+    const dLift=lift-this.prevLift; this.prevLift=lift;
+    /* 身体每帧位移要换算成局部单位喂给步态引擎 —— 阈值步态就是这么被驱动的 */
+    this.sp.update(dt,mode,speed,[px/this.unit,dLift/this.unit]);
+    this.y=this.ground+lift;
+  }
+  render(now){
+    if(!this.rect) return;
+    /* 蜘蛛不在罐里时也要把画布擦干净，否则罐子里留着冲出时的残影 */
+    if(this.hidden){ this.ctx.clearRect(0,0,this.rect.width,this.rect.height); return }
+    this.ctx.clearRect(0,0,this.rect.width,this.rect.height);
+    drawSpider(this.ctx,this.sp,{x:this.x,y:this.y,unit:this.unit,
+      heading:this.sp.heading,dim:this.alpha,
+      glow:.6+.4*Math.sin(now/230),aiming:false});
+  }
+}
+
+/* ------------------------------------------------------------------ 碎片粒子 */
+const fx={cv:null,ctx:null,parts:[],rect:null};
+function fxResize(){ if(!fx.cv)return; fx.rect=fitCanvas(fx.cv); fx.ctx=fx.cv.getContext("2d"); }
+function spawnDebris(cx,cy,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, sp=60+Math.random()*260;
+    fx.parts.push({x:cx,y:cy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-90,
+      r:1+Math.random()*2.6,life:.5+Math.random()*.7,t:0,rot:Math.random()*6,
+      c:Math.random()<.5?"#4A4A4A":"#8FB4D8"});   /* 浅色玻璃上碎片要深色才看得见 */
+  }
+}
+function fxDraw(dt){
+  if(!fx.ctx)return;
+  fx.ctx.clearRect(0,0,fx.rect.width,fx.rect.height);
+  fx.parts=fx.parts.filter(p=>p.t<p.life);
+  for(const p of fx.parts){
+    p.t+=dt; p.vy+=520*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=dt*6;
+    const a=clamp(1-p.t/p.life,0,1)*.9;
+    fx.ctx.save();fx.ctx.translate(p.x,p.y);fx.ctx.rotate(p.rot);
+    fx.ctx.fillStyle=rgba(p.c,a);fx.ctx.fillRect(-p.r,-p.r*.6,p.r*2,p.r*1.2);fx.ctx.restore();
+  }
+}
+
+/* =====================================================================
+   3. 启动台：面板 + 持久化 + 部署时间轴
+   ===================================================================== */
+/* 六档，顺序跟考纲标签表的常用序一致。词数是 assets/exam-tags.sqlite 里
+   按标签数出来的（tags 表 14942 行）：cet4 3849 / cet6 5407 / ky 4801 /
+   ielts 5040 / toefl 6974；工业英语在标签表里没有维度，标 na 走「标签缺失」样式。 */
+const MODES=[
+  {key:"cet4",  name:"四级",      words:3849},
+  {key:"cet6",  name:"六级",      words:5407},
+  {key:"ky",    name:"考研",      words:4801},
+  {key:"ielts", name:"雅思",      words:5040},
+  {key:"toefl", name:"托福",      words:6974},
+  {key:"bee",   name:"工业英语",  words:0, na:true},  // 标签表里没有这一档
+];
+const CHECKS=[
+  {key:"always_on_top",   label:"自动置顶", def:true},
+  {key:"show_meaning_card",label:"显示释义卡", def:true},
+  {key:"follow_mouse",    label:"跟随鼠标", def:false},
+];
+const DEFAULTS={selected_mode:"cet4",ocr_engine:"rapid",max_words:8,min_conf:0.80,
+  pet_scale:1.0, always_on_top:true, show_meaning_card:true, follow_mouse:false};
+const LS="eightlegs.launcher";
+
+/* 真机落地时换成 SQLite settings 表（key TEXT PRIMARY KEY, value TEXT）；
+   原型用 localStorage，行为等价：切换即写入。 */
+let settings={...DEFAULTS};
+try{ const s=JSON.parse(localStorage.getItem(LS)||"{}"); settings={...DEFAULTS,...s} }catch(e){}
+const save=()=>{try{localStorage.setItem(LS,JSON.stringify(settings))}catch(e){}};
+
+const $=id=>document.getElementById(id);
+const launcher=$("launcher"), jarWrap=$("jarWrap"), jarBox=$("jarBox");
+const flash=$("flash"), jarFlash=$("jarFlash");
+let phase="idle";     // idle → deploying → deployed → recalling
+let hideTimer=0;      // 部署后收起启动台的那一发延时
+
+/* ---------------------------------------------------------------- 面板构建 */
+const modesBox=$("modes");
+for(const m of MODES){
+  const b=document.createElement("button");
+  b.className="mode"+(m.na?" na":""); b.type="button"; b.role="radio";
+  b.dataset.key=m.key; b.setAttribute("aria-checked",settings.selected_mode===m.key);
+  b.innerHTML=`<b>${m.name}</b><span>${m.na?"标签缺失":m.words.toLocaleString()+" 词"}</span>`;
+  b.onclick=()=>{ settings.selected_mode=m.key; save(); syncModes(); renderData(); };
+  modesBox.appendChild(b);
+}
+function syncModes(){
+  for(const b of modesBox.children) b.setAttribute("aria-checked",b.dataset.key===settings.selected_mode);
+}
+const ocrSeg=$("ocrSeg");
+for(const b of ocrSeg.querySelectorAll("button")){
+  if(!b.disabled) b.onclick=()=>{settings.ocr_engine=b.dataset.key;save();syncOcr()};
+}
+function syncOcr(){
+  for(const b of ocrSeg.querySelectorAll("button")) if(!b.disabled)
+    b.setAttribute("aria-pressed",b.dataset.key===settings.ocr_engine);
+  $("ocrNote").textContent=settings.ocr_engine==="rapid"
+    ? "本机 ONNX Runtime · 纯离线（RapidOCR 1.2.3）"
+    : "需另装 paddleocr，当前包体内未打包";
+}
+function bindRange(id,outId,fmt,cb){
+  const el=$(id), out=$(outId);
+  const paint=()=>{ out.textContent=fmt(el.value);
+    el.style.setProperty("--p",((el.value-el.min)/(el.max-el.min)*100)+"%"); };
+  el.oninput=()=>{paint();cb(parseFloat(el.value))};
+  return {el,paint};
+}
+const wordsCtl=bindRange("maxWords","maxWordsOut",v=>v,v=>{settings.max_words=v;save()});
+const scaleCtl=bindRange("petScale","petScaleOut",v=>(+v).toFixed(2),v=>{settings.pet_scale=v;save();resizeAll()});
+$("minConf").oninput=e=>{settings.min_conf=clamp(parseFloat(e.target.value)||.8,.5,.99);save()};
+
+const checksBox=$("checks");
+for(const c of CHECKS){
+  const el=document.createElement("div");
+  el.className="check"; el.tabIndex=0; el.setAttribute("role","checkbox");
+  el.dataset.key=c.key; el.innerHTML=`<i></i>${c.label}`;
+  const toggle=()=>{settings[c.key]=!settings[c.key];save();syncChecks()};
+  el.onclick=toggle;
+  el.onkeydown=e=>{if(e.key===" "||e.key==="Enter"){e.preventDefault();toggle()}};
+  checksBox.appendChild(el);
+}
+function syncChecks(){
+  for(const el of checksBox.children) el.setAttribute("aria-checked",!!settings[el.dataset.key]);
+}
+function renderData(){
+  const m=MODES.find(x=>x.key===settings.selected_mode), line=$("dataLine");
+  line.title = m.na
+    ? `${m.name}：exam-tags 无此标签（只有 zk/gk/cet4/cet6/ky/ielts/toefl/gre），部署后退回全量挑词，词卡标「词表外」`
+    : `数据来源 assets/exam-tags.sqlite（生成于 2026-10-15）· 词典与标签两库解耦 · 识别全程不出本机`;
+  if(m.na){
+    line.innerHTML=`<span class="dot na"></span><b>词表 ECDICT v0.1.1 · 758,206 条</b>
+      考纲标签：<b style="color:var(--warn)">${m.name} 不可用</b>
+      退回「全量挑词」，词卡标 <span style="color:var(--warn)">词表外</span>`;
+  }else{
+    line.innerHTML=`<span class="dot"></span><b>词表 ECDICT v0.1.1 · 758,206 条</b>
+      考纲标签：<b>${m.name} ${m.words.toLocaleString()} 词</b>
+      来源 assets/exam-tags.sqlite · 两库解耦 · 全程离线`;
+  }
+}
+function syncPanel(){
+  syncModes();syncOcr();syncChecks();renderData();renderWords();
+  wordsCtl.el.value=settings.max_words; wordsCtl.paint();
+  scaleCtl.el.value=settings.pet_scale; scaleCtl.paint();
+  $("minConf").value=settings.min_conf.toFixed(2);
+}
+
+/* ---------------------------------------------------------------- 我的收藏单词
+   真机读 words 表（word / 释义 / stage 0..4 / 下次到期），原型给一组演示数据。
+   点一张卡片 = 完成一次复习：stage 进一档，下次间隔按 1/3/7/14 天排。 */
+const REVIEW_DAYS=[1,3,7,14];
+let words=[
+  {w:"abandon",     cn:"v. 放弃；放任自己",        stage:2, due:0},
+  {w:"plausible",   cn:"adj. 看上去合情合理的",     stage:1, due:0},
+  {w:"mitigate",    cn:"v. 减轻，缓和",            stage:0, due:0},
+  {w:"nuance",      cn:"n. 细微差别",              stage:3, due:2},
+  {w:"tenacious",   cn:"adj. 坚持不懈的；粘得牢的", stage:1, due:0},
+  {w:"scrutiny",    cn:"n. 仔细检查，细看",         stage:0, due:1},
+  {w:"compelling",  cn:"adj. 有说服力的",          stage:2, due:5},
+  {w:"deteriorate", cn:"v. 恶化，退化",            stage:4, due:0},
+  {w:"explicit",    cn:"adj. 明确说出的",          stage:1, due:1},
+  {w:"resilient",   cn:"adj. 恢复力强的",          stage:3, due:0},
+];
+let wordsFilter="all";
+const isDue=it=>it.stage<4&&it.due<=0;
+function renderWords(){
+  const list=$("wordsList"), due=words.filter(isDue).length;
+  $("wordsCount").textContent=`${words.length} 词 · 今日待复习 ${due}`;
+  const shown=wordsFilter==="due"?words.filter(isDue):words;
+  list.innerHTML=""; list.classList.toggle("as-empty",shown.length===0);
+  if(!shown.length){
+    const e=document.createElement("div"); e.className="words-empty";
+    e.innerHTML="<b>这一轮没有要复习的词</b><span>到日子蜘蛛会自己跳到前台提醒。</span>";
+    list.appendChild(e); return;
+  }
+  for(const it of shown){
+    const b=document.createElement("button"); b.type="button";
+    b.className="word"+(it.stage>=4?" done":"");
+    const badge=it.stage>=4?["已掌握","done"]:(isDue(it)?["今天",""]:["约 "+it.due+" 天后","later"]);
+    b.innerHTML=`<span class="w-top"><b>${it.w}</b><i class="w-due ${badge[1]}">${badge[0]}</i></span>`+
+      `<span class="w-bot"><span class="w-cn">${it.cn}</span>`+
+      `<span class="w-dots">${[0,1,2,3].map(i=>`<i class="${i<it.stage?"on":""}"></i>`).join("")}</span></span>`;
+    b.title=it.stage>=4?`${it.w} · 已走完 1/3/7/14 四轮`:`${it.w} · 第 ${it.stage+1} / 4 轮，点一下记一次复习`;
+    b.onclick=()=>{ if(it.stage>=4) return;
+      it.stage=Math.min(it.stage+1,4); it.due=REVIEW_DAYS[Math.min(it.stage,3)]; renderWords() };
+    list.appendChild(b);
+  }
+}
+for(const b of $("wordsFilter").querySelectorAll("button")){
+  b.onclick=()=>{ wordsFilter=b.dataset.f;
+    for(const o of $("wordsFilter").querySelectorAll("button")) o.setAttribute("aria-pressed",o===b);
+    renderWords(); };
+}
+
+/* ---------------------------------------------------------------- 设置弹层
+   识别引擎 / 最大识词 / 最小置信度 从主页搬到这里；控件 id 不变，
+   所以 syncPanel() 与 localStorage 那套照旧，真机换成 settings 表读写。 */
+const sheetMask=$("sheetMask"), gearBtn=$("btnSettings");
+let sheetOpen=false, sheetReturn=null;
+function openSheet(){
+  if(sheetOpen) return; sheetOpen=true; sheetReturn=document.activeElement;
+  sheetMask.classList.add("on"); gearBtn.setAttribute("aria-expanded","true");
+  requestAnimationFrame(()=>{ const f=sheetMask.querySelector(".seg button:not([disabled])");
+    if(f) f.focus(); });
+}
+function closeSheet(){
+  if(!sheetOpen) return; sheetOpen=false;
+  sheetMask.classList.remove("on"); gearBtn.setAttribute("aria-expanded","false");
+  if(sheetReturn&&sheetReturn.focus) sheetReturn.focus();
+}
+gearBtn.onclick=()=>sheetOpen?closeSheet():openSheet();
+$("btnSheetClose").onclick=closeSheet;
+$("btnSheetOk").onclick=closeSheet;
+sheetMask.addEventListener("pointerdown",e=>{ if(e.target===sheetMask) closeSheet() });
+sheetMask.addEventListener("keydown",e=>{                    // 简易焦点圈，Tab 不出弹层
+  if(e.key!=="Tab") return;
+  const f=[...sheetMask.querySelectorAll("button:not([disabled]),input")];
+  if(!f.length) return;
+  const first=f[0], last=f[f.length-1];
+  if(e.shiftKey&&document.activeElement===first){ e.preventDefault(); last.focus() }
+  else if(!e.shiftKey&&document.activeElement===last){ e.preventDefault(); first.focus() }
+});
+
+/* ---------------------------------------------------------------- 部署时间轴
+   0 / 180 / 420 / 620 / 740 ms —— 由 rAF 驱动，闪白期间不阻塞输入。 */
+const CRACKS=[$("crack1"),$("crack2"),$("crack3")];
+const T={};
+let deployStart=0, fired={};
+function beginDeploy(){
+  if(phase!=="idle") return;                      // 防重复点击
+  closeSheet();                                   // 弹层别盖在破罐动画上
+  phase="deploying"; save(); syncDeployButton();
+  clearTimeout(hideTimer); fx.parts.length=0;      // 上一轮残留的延时/碎屑
+  $("statusChip").querySelector("b").style.background="var(--warn)";
+  $("statusText").textContent="写入设置 · 破罐释放";
+  deployStart=performance.now(); fired={}; T.t0=deployStart;
+}
+function timeline(now){
+  if(phase!=="deploying") return;
+  const e=now-deployStart;
+  const once=(k,on)=>{ if(!fired[k]){fired[k]=true;on()} };
+  if(e>=0)   once("c1",()=>CRACKS[0].classList.add("on"));
+  if(e>=180) once("c2",()=>{CRACKS[1].classList.add("on");shake("soft")});
+  if(e>=420) once("c3",()=>{
+    CRACKS[2].classList.add("on"); shake("hard");
+    /* 撞击点在瓶身正面正中偏上（x = 0.5，y = 0.44h）—— 第四轮把裂纹从「两条侧壁」
+       改成「整面都是玻璃」，破点也就跟着回到视觉中心，和 make_cracks.py 的 IMPACT 一致；
+       图 980×433 = 瓶身设计尺寸 1:1，object-fit:fill 贴回 .jar-box 时比例正好 */
+    const b=$("jarBox").getBoundingClientRect();
+    spawnDebris(b.width*.5, b.height*.44, 46);
+  });
+  if(e>=620) once("burst",()=>{
+    jar.burstOut();
+    flash.style.transition="none"; flash.style.opacity="1";   // 瞬间不透明
+    void flash.offsetWidth;
+    flash.style.transition="opacity .11s linear";               // 110ms 淡出
+    flash.style.opacity="0";
+  });
+  if(e>=770) once("flashoff",()=>{        // 兜底：过渡被打断也不会留一屏白
+    flash.style.transition="none"; flash.style.opacity="0";
+  });
+  if(e>=740) once("deployed",()=>{    phase="deployed";
+    jarWrap.classList.add("fade");
+    jarBox.classList.add("opened");            // 侧壁上沿的亮边没掉，罐子空着
+    document.querySelector(".stage").style.transition="opacity .3s ease";
+    launcher.classList.add("gone");
+    /* 300ms 后收起启动台。用户在这 300ms 内点了「回到启动台」就别抢回去 ——
+       桌宠会在窗口再次被关闭时（btnClose）补上。 */
+    clearTimeout(hideTimer);
+    hideTimer=setTimeout(()=>{ hideTimer=0;
+      /* 用户在这 300ms 内点了「回到启动台」的话，backToLauncher 已经把 hideTimer 清掉了，
+         这里只需要再确认一次状态还在「已部署」。不能用 display 判断 ——
+         启动时 backToLauncher() 就把 display 写成了 flex，那个条件永远成立。 */
+      if(phase!=="deployed") return;
+      launcher.style.display="none"; showPet(); },300);
+    $("statusChip").querySelector("b").style.background="var(--green)";
+    $("statusText").textContent="已部署 · 蜘蛛在桌面上";
+    syncDeployButton();
+  });
+}
+function shake(kind){
+  jarWrap.classList.remove("shake-soft","shake-hard");
+  void jarWrap.offsetWidth;                      // 重置动画
+  jarWrap.classList.add(kind==="hard"?"shake-hard":"shake-soft");
+}
+
+/* ---------------------------------------------------------------- 收回（部署的反向操作）
+   部署完成后右下角那颗绿色大按钮不消失、不禁用，而是翻成红色「收回」。
+   点它：① 罐内先闪白 → ② 蜘蛛从罐口上方落回原来的位置 → ③ 裂纹逐层愈合、侧壁上沿的亮边回来。
+   和 beginDeploy 一样由 rAF 驱动，闪白期间主循环照跑，不阻塞输入。 */
+function syncDeployButton(){
+  const btn=$("btnDeploy");
+  const out=(phase==="deployed"||phase==="recalling");      // 蜘蛛在罐外
+  btn.classList.toggle("recall",out);
+  btn.disabled=(phase!=="idle"&&phase!=="deployed");
+  btn.textContent=phase==="deployed"?"收 回":phase==="recalling"?"正在收回…":
+                   phase==="deploying"?"正在部署…":"部 署";
+  $("stageTag").textContent=out?"Jar · 蜘蛛已出罐":"Jar · 部署前";
+  $("stageTip").textContent=out?"罐子空着，点「收回」叫它回来"
+    :"阈值步态 + 两骨 IK · 点一下让它跳";
+  $("firstUseTag").textContent=out?"已部署":"首次使用";
+  $("firstUseBody").innerHTML=out
+    ? "：蜘蛛在桌面上。<u>收回</u>只是把它叫回罐子，设置和生词本都不丢。"
+    : "：部署后蜘蛛落在屏幕右下角 —— <u>点它的头</u>框选识词，<u>按住肚子</u>拖动，滚轮缩放，右键菜单。收藏的词按 <u>1 / 3 / 7 / 14 天</u>间隔复习。";
+}
+const RJ={};
+let recallStart=0;
+function beginRecall(){
+  if(phase!=="deployed") return;                  // 防重复点击
+  phase="recalling"; syncDeployButton();
+  fx.parts.length=0;                              // 破罐残留的碎屑先清掉
+  jarFlash.style.transition="none"; jarFlash.style.opacity="0";
+  $("statusChip").querySelector("b").style.background="var(--warn)";
+  $("statusText").textContent="收回中 · 蜘蛛回罐";
+  for(const k in RJ) delete RJ[k];
+  recallStart=performance.now();
+}
+function recallTimeline(now){
+  if(phase!=="recalling") return;
+  const e=now-recallStart;
+  const once=(k,on)=>{ if(!RJ[k]){RJ[k]=true;on()} };
+  once("pet",()=>{ petwin.classList.remove("on"); $("btnBack").classList.remove("on"); });
+  once("flash",()=>{                              // 只罩住罐子那一层，面板照常能点
+    jarFlash.style.transition="none"; jarFlash.style.opacity="1";
+    void jarFlash.offsetWidth;
+    jarFlash.style.transition="opacity .2s linear"; jarFlash.style.opacity="0";
+  });
+  if(e>=120) once("drop",()=>jar.returnIn());
+  if(e>=250) once("h3",()=>CRACKS[2].classList.remove("on"));
+  if(e>=330) once("h2",()=>CRACKS[1].classList.remove("on"));
+  if(e>=400) once("h1",()=>CRACKS[0].classList.remove("on"));
+  if(e>=555) once("land",()=>{                    // 落地：轻抖 + 一圈玻璃屑
+    shake("soft");
+    if(jar.rect) spawnDebris(jar.rect.width*.5, jar.ground+6, 18);
+  });
+  /* 上沿亮边等蜘蛛落定了再回来 —— 它顶替原来「盖子滑回」那一拍 */
+  if(e>=620) once("lid",()=>jarBox.classList.remove("opened"));
+  if(e>=600) once("flashoff",()=>{jarFlash.style.transition="none";jarFlash.style.opacity="0"});
+  if(e>=680) once("done",()=>{
+    phase="idle"; syncDeployButton();
+    $("statusChip").querySelector("b").style.background="var(--green)";
+    $("statusText").textContent="引擎就绪 · 全离线";
+  });
+}
+function deployOrRecall(){
+  if(phase==="idle") beginDeploy();
+  else if(phase==="deployed") beginRecall();
+}
+
+/* ---------------------------------------------------------------- 部署后的桌宠 */
+const petwin=$("petwin"), pet={cv:$("petCanvas"),ctx:null,sp:new Spider(1),x:0,dir:1,pause:.4};
+pet.sp.heading=Math.PI/2;
+function petResize(){
+  const r=fitCanvas(pet.cv); pet.rect=r; pet.ctx=pet.cv.getContext("2d");
+  pet.unit=unitForWidth(r.width*.82*clamp(settings.pet_scale,.6,2));
+  pet.lo=r.width*.16; pet.hi=r.width*.84; pet.ground=r.height*.88;
+  pet.x=clamp(pet.x||r.width*.4,pet.lo,pet.hi);
+  pet.speed=GAIT_MAX_LOCAL_PER_FRAME*60*pet.unit;
+}
+function showPet(){
+  petwin.classList.add("on"); $("btnBack").classList.add("on");
+  petResize();
+  $("bubble").classList.add("on");
+  setTimeout(()=>$("bubble").classList.remove("on"),3600);
+}
+function petTick(dt){
+  if(!pet.rect||!petwin.classList.contains("on"))return;
+  let px=0,mode="crawl",speed=0;
+  if(pet.pause>0){pet.pause-=dt;mode="idle";pet.sp.mode="idle"}
+  else{
+    px=pet.dir*pet.speed*dt;speed=pet.speed;mode="crawl";
+    if(pet.x+px>pet.hi){pet.x=pet.hi;pet.dir=-1;pet.pause=1.6}
+    else if(pet.x+px<pet.lo){pet.x=pet.lo;pet.dir=1;pet.pause=1.6}
+    if(Math.random()<.001)pet.pause=1.2;
+  }
+  pet.x=clamp(pet.x+px,pet.lo,pet.hi);
+  pet.sp.update(dt,mode,speed,[px/pet.unit,0]);
+  pet.ctx.clearRect(0,0,pet.rect.width,pet.rect.height);
+  drawSpider(pet.ctx,pet.sp,{x:pet.x,y:pet.ground,unit:pet.unit,
+    heading:pet.sp.heading,dim:1,focus:false,glow:.6+.4*Math.sin(performance.now()/240)});
+}
+
+/* ---------------------------------------------------------------- 主循环 */
+const jar=new JarSpider($("spiderCanvas"));
+const jarStage=$("stage");
+function stageRect(){ return jarStage.getBoundingClientRect() }
+function resizeAll(){
+  const r=fitCanvas($("spiderCanvas"));
+  fx.cv=$("fxCanvas"); fxResize();
+  jar.layout(r);
+  if(petwin.classList.contains("on")) petResize();
+}
+$("spiderCanvas").addEventListener("click",()=>{ if(phase==="idle") jar.hop(); });
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  jar.tick(dt); jar.render(now);
+  fxDraw(dt);
+  petTick(dt);
+  timeline(now);
+  recallTimeline(now);
+  requestAnimationFrame(loop);
+}
+
+/* ---------------------------------------------------------------- 窗口交互 */
+$("btnDeploy").addEventListener("click",deployOrRecall);
+$("btnBack").addEventListener("click",backToLauncher);
+$("btnClose").addEventListener("click",()=>{
+  closeSheet();
+  launcher.classList.add("gone");
+  setTimeout(()=>{
+    launcher.style.display="none";$("restore").classList.add("on");
+    /* 部署状态下去掉启动台窗口，蜘蛛要重新回到桌面上继续跑 */
+    if(phase==="deployed") showPet();
+  },300);
+  $("restoreText").textContent=phase==="deployed"?"蜘蛛已经在桌面上了。":"启动台已关闭。";
+});
+$("btnRestore").addEventListener("click",()=>{ $("restore").classList.remove("on"); backToLauncher() });
+/* 「回到启动台」只是把窗口叫回来，不改变部署状态：
+   蜘蛛还在外面时，罐子以「空罐 + 裂纹 + 上沿没了亮边」的样子回来，右下角是红色收回按钮。 */
+function backToLauncher(){
+  if(phase==="deployed"){
+    petwin.classList.remove("on"); $("btnBack").classList.remove("on");
+    jarWrap.classList.remove("fade");
+  }else if(phase==="idle"){
+    fx.parts.length=0; jar.reset();
+    jarWrap.classList.remove("fade"); CRACKS.forEach(c=>c.classList.remove("on"));
+    jarBox.classList.remove("opened");
+    $("statusChip").querySelector("b").style.background="var(--green)";
+    $("statusText").textContent="引擎就绪 · 全离线";
+  }
+  flash.style.transition="none"; flash.style.opacity="0";
+  clearTimeout(hideTimer);
+  launcher.style.display="flex";
+  requestAnimationFrame(()=>{
+    launcher.classList.remove("gone","show"); void launcher.offsetWidth;
+    launcher.classList.add("show"); resizeAll(); syncDeployButton();
+  });
+}
+/* 标题栏拖动 */
+(()=>{
+  const bar=$("titlebar"); let d=null;
+  bar.addEventListener("pointerdown",e=>{
+    if(e.target.closest("button"))return;
+    d={x:e.clientX,y:e.clientY,tx:launcher.offsetLeft,ty:launcher.offsetTop};
+    bar.setPointerCapture(e.pointerId);
+  });
+  bar.addEventListener("pointermove",e=>{
+    if(!d)return;
+    launcher.style.position="absolute";
+    launcher.style.left=(d.tx+e.clientX-d.x)+"px";
+    launcher.style.top=(d.ty+e.clientY-d.y)+"px";
+    launcher.style.transform="none"; launcher.style.margin="0";
+    launcher.dataset.moved="1";
+  });
+  bar.addEventListener("pointerup",()=>{d=null});
+})();
+
+/* ---------------------------------------------------------------- 启动 */
+syncPanel();
+backToLauncher();
+addEventListener("resize",resizeAll);
+new ResizeObserver(resizeAll).observe(jarStage);
+requestAnimationFrame(()=>{ resizeAll(); requestAnimationFrame(loop) });
+window.addEventListener("keydown",e=>{
+  /* Esc 优先关设置弹层；否则按原来的语义：部署状态回启动台 */
+  if(e.key==="Escape"&&sheetOpen){ closeSheet(); return }
+  if(e.key==="Escape"&&phase==="deployed") backToLauncher();
+});
+
+/* 原型自检钩子：方便用浏览器脚本读实时状态（真机移植时删掉） */
+window.__dbg=()=>({phase,settings,
+  sheet:{open:sheetOpen,cls:sheetMask.classList.contains("on"),
+    gearExpanded:gearBtn.getAttribute("aria-expanded")},
+  words:{n:words.length,due:words.filter(isDue).length,filter:wordsFilter,
+    cards:$("wordsList").children.length,
+    first:$("wordsList").firstElementChild?
+      $("wordsList").firstElementChild.textContent.replace(/\s+/g," ").trim():null},
+  jar:{x:jar.x,y:jar.y,unit:jar.unit,speed:jar.speed,
+  lo:jar.lo,hi:jar.hi,hidden:jar.hidden,dropping:!!jar.drop,
+  ground:jar.ground,reach:jar.reach,rect:jar.rect?
+    [Math.round(jar.rect.width),Math.round(jar.rect.height)]:null,
+  heading:jar.sp.heading*180/Math.PI,stepping:jar.sp.legs.filter(L=>L.stepping).length},
+  /* 十个脚落点的实际世界坐标（和 drawSpider 的 S() 同一套旋转），
+     用来当场验证「蜘蛛全在玻璃里」而不是靠体心范围推算 */
+  feet:(()=>{const c=Math.cos(jar.sp.heading),s=Math.sin(jar.sp.heading),u=jar.unit;
+    let a=1e9,b=-1e9,d=1e9,e=-1e9,n=0;
+    for(const L of jar.sp.legs){ if(!L.foot) continue; n++;
+      const X=L.foot[0]*u,Y=L.foot[1]*u;
+      const px=jar.x+X*c-Y*s, py=jar.y+X*s+Y*c;
+      a=Math.min(a,px);b=Math.max(b,px);d=Math.min(d,py);e=Math.max(e,py);
+    }
+    return {n,x:[+a.toFixed(1),+b.toFixed(1)],y:[+d.toFixed(1),+e.toFixed(1)]};})(),
+  pet:{x:pet.x,unit:pet.unit,speed:pet.speed,on:petwin.classList.contains("on")},
+  btn:{text:$("btnDeploy").textContent,recall:$("btnDeploy").classList.contains("recall"),
+       disabled:$("btnDeploy").disabled},
+  jarDom:{opened:jarBox.classList.contains("opened"),fade:jarWrap.classList.contains("fade"),
+       cracks:CRACKS.map(c=>c.classList.contains("on")).join(","),flashOpacity:jarFlash.style.opacity}});
+</script>
+
+<script id="liquid-glass-interaction-polish">
+(() => {
+  const panel = document.getElementById("panelScroll");
+  if (!panel) return;
+
+  let target = panel.scrollTop;
+  let raf = 0;
+
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const animate = () => {
+    raf = 0;
+    const current = panel.scrollTop;
+    const diff = target - current;
+    if (Math.abs(diff) < 0.5) {
+      panel.scrollTop = target;
+      return;
+    }
+    panel.scrollTop = current + diff * 0.22;
+    raf = requestAnimationFrame(animate);
+  };
+
+  panel.addEventListener("wheel", (event) => {
+    // 只接管传统「每格滚轮」；触控板 pixelDelta 继续交给浏览器原生滚动。
+    if (event.deltaMode !== 1 || Math.abs(event.deltaY) < 1) return;
+    const max = panel.scrollHeight - panel.clientHeight;
+    if (max <= 0) return;
+    target = clamp((raf ? target : panel.scrollTop) + event.deltaY * 34, 0, max);
+    event.preventDefault();
+    if (!raf) raf = requestAnimationFrame(animate);
+  }, {passive:false});
+
+  panel.addEventListener("scroll", () => {
+    if (!raf) target = panel.scrollTop;
+  }, {passive:true});
+})();
+</script>
+
+</body>
+</html>
