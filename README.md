@@ -337,14 +337,24 @@ setx LEXARA_AI_MODEL   "gpt-4o-mini"
 ### 几个关键点
 
 <details>
-<summary><b>步态是移植的，不是编的</b></summary>
+<summary><b>步态引擎的演进</b></summary>
 
-`STEP_FRAC=.3 / URGENT_FRAC=.5 / OVER_FRAC=.92 / PLACE_FRAC=.85`、
-`LEAD_SECONDS=.3 / LEAD_MAX_FRAC=.3`、迈步时长 0.10~0.17 秒、抬腿幅度 18%，
-全部对齐 `crawler.js` 的 `T` 对象。
+腿部两段骨长 `L1/L2` 和值已从原版的 `1.20×reach` 拉到 **`1.26×reach`**
+（0.56 + 0.70），腿全长 +5%。所有比例阈值按公式自动等比缩放，
+相对关系 `PLACE < OVER < REACH_LIMIT` 保持不变。
+当前参数口径：
 
-落脚点是「静止位 + 速度前瞻」，**没有随机抖动** —— 加了抖动脚就会在原地游走，站姿散成一团。
-</details>
+```
+STEP_FRAC=.34 / URGENT_FRAC=.55 / OVER_FRAC=.92 / PLACE_FRAC=.85
+LEAD_SECONDS=.26 / LEAD_MAX_FRAC=.27 / VELOCITY_DAMP=6.0
+L1_FRAC=.56 / L2_FRAC=.70 → full = 1.26 × reach
+```
+
+在此阈值骨架之上，本项目叠加了原版没有的**异步行波相位排班**
+（`GAIT_PHASE_PER_UNIT / LEG_PHASE / GAIT_WINDOW`），让八条腿像波浪一样依次迈步，
+而不是原版那样各腿独立触发。
+
+落脚点仍是「静止位 + 速度前瞻」，**没有随机抖动** —— 加了抖动脚就会在原地游走，站姿散成一团。</details>
 
 <details>
 <summary><b>身体位移必须喂给步态引擎</b></summary>
@@ -478,11 +488,11 @@ lexara/
 | --- | --- | --- |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR)（`rapidocr-onnxruntime` 1.2.3） | 离线 OCR | Apache-2.0 |
 | [ECDICT Revised](https://github.com/sliuhaob/ecdict-revised) v0.1.1（基于 [skywind3000/ECDICT](https://github.com/skywind3000/ECDICT)） | 内置词库 758,497 条 | MIT + CC BY-SA 4.0 |
-| [web-crawlers](https://github.com/cyohei9907/web-crawlers) | 八足几何与步态的移植来源（Python 重写，未分发其源码） | **未声明** |
+| [web-crawlers](https://github.com/cyohei9907/web-crawlers) | 多腿程序化生成的总体思路参考。几何参数、步态阈值、渲染链已独立重写 | **未声明** |
 
 **PySide6 / Qt 6 是 LGPL-3.0。** 本项目用 PyInstaller 打包分发，Qt 库内嵌在可执行文件中；按 LGPL 要求，源码与 5 份 `.spec` 一并提供，任何人都可以用自己修改过的 Qt 重新打包。许可证全文见 `licenses/LGPL-3.0.txt`。
 
-> **关于 `web-crawlers` 的一条实话**：`src/crawler_spider.py` 与 `src/spider_painter.py` 的几何与步态移植自该项目，而上游仓库**尚未声明许可证**。在对方补充许可之前，这两个文件不能被当作干净的 MIT 代码再分发。其余代码与素材不受影响。素材归属：`jar_crack_*` 由 `spider_cracked.png` 派生，`lexara_logo*` 与 `icon.*` 由 `tools/` 下的脚本程序化生成。
+> **关于 `web-crawlers` 的说明**：蜘蛛程序化生成的总体思路（多腿、阈值步态、两骨 IK）参考自该项目，而上游仓库**尚未声明许可证**。本项目的几何参数表（四对步足的非等距静止角、中段腿长错落分布、骨长和值 1.26×reach）、步态参数、以及在此之上叠加的异步行波相位排班、徽章站姿、身体三件套、腿↔词匈牙利分配等全部扩展均为独立实现；渲染链（QPainter 自绘）也与原版 Canvas 无关。但 IK 公式与阈值骨架属于原项目的结构性设计，**在对方补充许可之前，这些文件仍不能被当作干净的 MIT 代码再分发**。其余代码与素材不受影响。素材归属：`jar_crack_*` 由自制裂纹原图程序化派生，`lexara_logo*` 与 `icon.*` 由 `tools/` 下的脚本程序化生成。
 >
 > `assets/ecdict.sqlite` 是第三方数据，按上游双许可分发，**不适用**本项目的 MIT 许可。
 
