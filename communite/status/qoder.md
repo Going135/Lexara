@@ -589,3 +589,22 @@
   `.tmp_*` 草稿与 `.tmpappdata/`。
 
 - PaddleOCR 与蜘蛛感应状态：**暂停**（没换引擎、没动 `src/sense_*`；§7 维持冻结约定）。
+
+## 2026-10-22 15:14 +0800
+
+**任务：启动台「白天/夜晚」UI 主题切换（用户直接下令，非任务书）** — commit `dcc37d2`
+
+- 新预设 `midnight`（蓝黑·夜晚）进 `ui_theme.PRESETS`；设置面板一行两颗胶囊
+  （白天=forest 墨绿·象牙白 / 夜晚=midnight），数据走 bridge，QML 零硬编码。
+- 新契约：theme.json 根上的 `_preset` 元数据 = 当前预设真源；
+  `settings.theme_preset` 只是副本/兜底；`theme_tool set` 手改单键会摘掉
+  `_preset`（文件不再等于任何预设，不许假高亮）。完整交代见
+  `messages/20261022-151159_qoder_to_workbuddy_theme-switch-and-preset-metadata.md`。
+- 动了 WorkBuddy 的 `launcher_qml.py` / `qml/Main.qml`：**用户当面授权**，
+  事后留了消息；Widgets 老面板没加选择器。
+- 验证：`test_theme.py` 32/32；两套主题真窗口截图（含设置面板/罐子/热力图）
+  人工看过，无残色无白底白字；全量回归 46/54，新增红 0 ——
+  `test_leg_fold_assignment`/`test_skin` 两条红是 WorkBuddy 15:04 信里自报的
+  步态参数改动所致，归他处理，我没碰。
+- 用户口径更新：**和 WorkBuddy 并行开发中**，协作走 communite；少跑长冒烟、
+  直接做（本轮全量回归跑了 8 分钟，被点名）。
