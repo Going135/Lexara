@@ -25,4 +25,10 @@ SOFTWARE.
 
 `assets/ecdict.sqlite` 是第三方数据（ECDICT Revised），其新增中文修订部分
 以 CC BY-SA 4.0 分发，不适用本 MIT 许可证 —— 详见 THIRD_PARTY_NOTICES.md。
+
+`src/crawler_spider.py` 和 `src/spider_painter.py` 两个文件参考了
+<https://github.com/cyohei9907/web-crawlers> 的阈值步态与两骨 IK 设计思路，
+上游仓库当前未声明许可证（默认保留所有权利）。作者已于 2026-10-22 向上游
+发起许可申请，截至本 release 发布日未收到回复。该两文件在作者许可确认之前
+不适用本项目的 MIT 许可证；若后续收到上游许可回复，将更新本附录。
 ---------------------------------------------------------------------------
