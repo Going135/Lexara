@@ -2435,12 +2435,24 @@ ApplicationWindow {
                 border.color: root.overlayPinned ? root.accent : root.line
                 border.width: 1
                 // 收起时别再吃空格/回车 —— 卡片被裁掉了，快捷键却还在翻页
-                focus: visible && !reviewPanel.collapsed && bridge.reviewStage === "card"
+                //: 默写弹层开着时**必须让出焦点**：面板 `focus: true` 会触发
+                //: `clearFocusInScope`，把弹层里输入框的焦点一起清掉（绑定每
+                //: 重算一次就清一次），用户看着光标在闪却打不进字。
+                focus: visible && !reviewPanel.collapsed
+                       && bridge.reviewStage === "card"
+                       && bridge.reviewSpell.open !== true
                 Keys.onSpacePressed: {
                     if (!bridge.reviewCard.revealed)
                         bridge.reviewReveal()
                 }
                 Keys.onReturnPressed: {
+                    //: 默写弹层开着时回车归弹层（见 spellInput.onAccepted）。
+                    //: **这行必须留着**：Qt 的 Return 键在 TextField 上既发
+                    //: `accepted()` 又继续往祖先冒泡，一次回车会同时判「记住了」
+                    //: 并把卡片翻走 —— 弹层被 `_reset_spell()` 清掉，用户看到的
+                    //: 是「按回车就退出」，实际还悄悄写进了一次假的满分自评。
+                    if (bridge.reviewSpell.open === true)
+                        return
                     if (bridge.reviewCard.revealed)
                         bridge.reviewGrade(true)
                 }
@@ -2980,8 +2992,18 @@ ApplicationWindow {
                     //: 带一点蓝的深色，而不是纯黑：夜间主题下纯黑遮罩会把
                     //: 雾白文字的余像衬得很脏。
                     color: "#D90B1520"
-                    focus: visible
-
+                    //: **不要给这一层 `focus: visible`**。给过，结果是它把
+                    //: `spellInput.forceActiveFocus()` 的焦点抢走（绑定在信号
+                    //: 处理器之后才落地），用户根本打不进字，而回车顺着冒泡
+                    //: 一路跑到 reviewPanel 上判了「记住了」—— 观感就是
+                    //: 「按回车直接退出，还没法默写」。
+                    //: Esc 不需要本层有焦点：TextField 不消费 Esc，事件会沿
+                    //: 祖先链冒上来，下面的 Keys.onEscapePressed 照样收到。
+                    //: 回车**只挂在输入框自己身上**（见 spellInput 的 Keys）。
+                    //: 挂在遮罩这一层不管用：TextField 会把 Return 吃掉，事件
+                    //: 根本冒不到这里；而在 TextField 上写 `onAccepted` 也不行
+                    //: —— 判对后输入框转 `readOnly`，readOnly 不再发 accepted，
+                    //: 第二次回车（= 点「完成」）就没反应了。
                     Keys.onEscapePressed: bridge.reviewSpellClose()
                     onVisibleChanged: {
                         if (visible) {
@@ -3075,9 +3097,28 @@ ApplicationWindow {
                                 rightPadding: 12
                                 topPadding: 8
                                 bottomPadding: 8
+                                //: 焦点必须**声明式**地跟着 `open` 走：
+                                //: 只在 `onVisibleChanged` 里 `forceActiveFocus()`
+                                //: 不够 —— 那一刻面板/遮罩上还有别的 focus 绑定在
+                                //: 重算，焦点会被抢回去，用户就打不进字（回车于是
+                                //: 直接冒到 reviewPanel 上判了「记住了」）。
+                                focus: bridge.reviewSpell.open === true
                                 //: 判对之后锁输入：再改也没意义，还会让人以为能重判
                                 readOnly: bridge.reviewSpell.verdict === "correct"
-                                onAccepted: bridge.reviewSpellSubmit(text)
+                                //: 回车 = 点右边那颗主按钮：没判对是「完成默写」，
+                                //: 判对后按钮变「完成」，回车就收掉弹层。
+                                //: **挂在 Keys 而不是 `onAccepted`**：Keys 默认
+                                //: `BeforeItem` 优先级，先于 TextField 自己的处理
+                                //: 执行，`readOnly` 之后也照样收得到；`accepted`
+                                //: 置 true 顺便拦住冒泡，不然 Panel 那边还会跟着
+                                //: 判一次「记住了」。
+                                Keys.onReturnPressed: {
+                                    event.accepted = true
+                                    if (bridge.reviewSpell.verdict === "correct")
+                                        bridge.reviewSpellClose()
+                                    else
+                                        bridge.reviewSpellSubmit(text)
+                                }
                                 background: Rectangle {
                                     radius: 9
                                     color: root.card

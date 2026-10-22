@@ -51,6 +51,9 @@ class ReviewSession:
         self._wrong_words: list = []
         self._started_at = 0.0
         self._finished = False
+        #: 本轮的分类过滤器（`item -> bool`，None = 全部）。调度算法不认它，
+        #: 它只决定「哪些词有资格进队列」，1/3/7/14 仍由 `Wordbook.grade()` 定。
+        self._keep = None
 
     # ------------------------------------------------ 生命周期
     @property
@@ -62,15 +65,22 @@ class ReviewSession:
         return self._revealed
 
     def start(self, limit: int | None = None,
-              include_upcoming: bool = True) -> dict:
+              include_upcoming: bool = True,
+              keep=None) -> dict:
         """开一轮复习。返回本轮概况（供复习入口页与卡片页使用）。
 
         ``include_upcoming=False`` 时只练**今天到期**的词（"只复习到期"语义）。
+        ``keep`` 是可选的分类过滤器（``item -> bool``），会被记住并在
+        ``rebuild()`` 后继续生效 —— 入口页选「四级」，中途自评不该把
+        别的分类混进来。
         队列顺序完全来自 ``Wordbook.review_queue()``（到期优先、其次新词），
         这里不重排。
         """
+        self._keep = keep
         items = list(self.book.review_queue())
         now = time.time()
+        if self._keep is not None:
+            items = [i for i in items if self._keep(i)]
         if not include_upcoming:
             items = [i for i in items if i.due_at <= now]
         cap = self.limit if limit is None else limit
@@ -124,6 +134,8 @@ class ReviewSession:
             return
         current = self.current_word()
         items = list(self.book.review_queue())
+        if self._keep is not None:
+            items = [i for i in items if self._keep(i)]
         if self.limit:
             items = items[:self.limit]
         index = 0

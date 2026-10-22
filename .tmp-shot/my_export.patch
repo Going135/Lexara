@@ -1,0 +1,201 @@
+diff --git a/src/qml/Main.qml b/src/qml/Main.qml
+index fc85c85..67404f4 100644
+--- a/src/qml/Main.qml
++++ b/src/qml/Main.qml
+@@ -689,22 +689,27 @@ ApplicationWindow {
+ 
+                             // 导出入口：跟着收藏夹展开出现（导的就是这批词），
+                             // 不抢首屏空间。真正的格式选择在对齐的导出面板里。
+-                            RowLayout {
++                            Rectangle {
+                                 Layout.fillWidth: true
+-                                Layout.topMargin: 4
++                                implicitHeight: 26
++                                radius: 8
++                                color: exportHover.containsMouse ? root.navHoverBg
++                                                                 : "transparent"
+                                 Label {
+-                                    text: "🗂 导出单词本…"
++                                    anchors.left: parent.left
++                                    anchors.leftMargin: 10
++                                    anchors.verticalCenter: parent.verticalCenter
++                                    text: "导出单词本…"
+                                     font.pixelSize: 12
+                                     color: root.accent
+                                 }
+-                                Item { Layout.fillWidth: true }
+-                            }
+-                            MouseArea {
+-                                Layout.fillWidth: true
+-                                implicitHeight: 4
+-                                anchors.topMargin: -20
+-                                cursorShape: Qt.PointingHandCursor
+-                                onClicked: root.overlay = "export"
++                                MouseArea {
++                                    id: exportHover
++                                    anchors.fill: parent
++                                    hoverEnabled: true
++                                    cursorShape: Qt.PointingHandCursor
++                                    onClicked: root.overlay = "export"
++                                }
+                             }
+                         }
+                     }
+@@ -1820,6 +1825,157 @@ ApplicationWindow {
+                     }
+                 }
+             }
++            // ---- 导出单词本
++            // 三个出口（txt/csv/json）只是格式选择，命名和落盘位置交给
++            // 系统「另存为」对话框；txt 额外给一个「遮住答案」开关，
++            // 导出的就是自测卷。
++            Rectangle {
++                id: exportPanel
++                objectName: "exportPanel"
++                visible: root.overlay === "export"
++                width: 420
++                height: exportPanel.collapsed ? root.overlayBarHeight : 336
++                clip: true
++                radius: 16
++                color: root.card
++                border.color: root.overlayPinned ? root.accent : root.line
++                border.width: 1
++
++                property string fmt: "txt"
++                property bool study: false
++                //: 标记 / 收起状态（见 skinsPanel 的注释）
++                property bool isPanel: true
++                property bool collapsed: false
++
++                MouseArea {
++                    anchors.fill: parent
++                    acceptedButtons: Qt.AllButtons
++                    onWheel: function(wheel) { wheel.accepted = true }
++                }
++                DragBar {
++                    panel: exportPanel
++                    anchors.left: parent.left
++                    anchors.right: parent.right
++                    anchors.top: parent.top
++                    anchors.topMargin: 6
++                    height: 38
++                }
++
++                ColumnLayout {
++                    anchors.fill: parent
++                    anchors.margins: 18
++                    spacing: 10
++
++                    RowLayout {
++                        spacing: 9
++                        Label {
++                            text: "导出单词本"
++                            font.pixelSize: 15
++                            font.bold: true
++                            color: root.ink
++                        }
++                        Item { Layout.fillWidth: true }
++                        Label {
++                            text: bridge.total + " 个单词"
++                            font.pixelSize: 11
++                            color: root.muted
++                        }
++                        WinButton {
++                            glyph: exportPanel.collapsed ? "\u25A1" : "\u2014"
++                            onClicked: root.toggleOverlayCollapsed(exportPanel)
++                        }
++                        WinButton {
++                            glyph: "\u2715"
++                            onClicked: root.overlay = ""
++                        }
++                    }
++
++                    Label {
++                        text: "自己命名、自己选位置。文本适合带走背，表格适合"
++                              + "Excel 里整理，备份能原样导回词蛛。"
++                        Layout.fillWidth: true
++                        wrapMode: Text.Wrap
++                        font.pixelSize: 11
++                        color: root.muted
++                    }
++
++                    RowLayout {
++                        spacing: 6
++                        Label {
++                            text: "格式"
++                            font.pixelSize: 12
++                            color: root.text
++                            Layout.preferredWidth: 78
++                        }
++                        PillButton {
++                            text: "文本 .txt"
++                            checked: exportPanel.fmt === "txt"
++                            onClicked: exportPanel.fmt = "txt"
++                        }
++                        PillButton {
++                            text: "表格 .csv"
++                            checked: exportPanel.fmt === "csv"
++                            onClicked: exportPanel.fmt = "csv"
++                        }
++                        PillButton {
++                            text: "备份 .json"
++                            checked: exportPanel.fmt === "json"
++                            onClicked: exportPanel.fmt = "json"
++                        }
++                    }
++
++                    RowLayout {
++                        visible: exportPanel.fmt === "txt"
++                        spacing: 8
++                        Label {
++                            text: "遮住答案"
++                            font.pixelSize: 12
++                            color: root.text
++                            Layout.preferredWidth: 78
++                        }
++                        MiniSwitch {
++                            checked: exportPanel.study
++                            onToggled: function (v) { exportPanel.study = v }
++                        }
++                        Label {
++                            Layout.fillWidth: true
++                            text: "只留单词和音标，释义用下划线代替"
++                            font.pixelSize: 11
++                            color: root.muted
++                            wrapMode: Text.Wrap
++                        }
++                    }
++
++                    Item { Layout.fillHeight: true }
++
++                    RowLayout {
++                        Item { Layout.fillWidth: true }
++                        Button {
++                            text: "导出"
++                            implicitWidth: 96
++                            implicitHeight: 34
++                            enabled: bridge.total > 0
++                            onClicked: {
++                                var r = bridge.exportWordbook(exportPanel.fmt,
++                                                              exportPanel.study)
++                                if (r && r.ok) root.overlay = ""
++                            }
++                            background: Rectangle {
++                                radius: 9
++                                color: parent.enabled ? root.accent : root.line
++                            }
++                            contentItem: Label {
++                                text: "导出"
++                                font.pixelSize: 12
++                                color: root.white
++                                horizontalAlignment: Text.AlignHCenter
++                                verticalAlignment: Text.AlignVCenter
++                            }
++                        }
++                    }
++                }
++            }
++
+             // ---- AI 模型配置（Base URL / 模型名 / API Key）
+             Rectangle {
+                 id: apiPanel

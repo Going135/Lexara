@@ -1034,7 +1034,7 @@ class PetWindow(QWidget):
         if mode not in CS.MODES:
             mode = "idle"
         # 身体位移必须喂给引擎：脚钉在原地，身体一动静止位就相对偏移，
-        # 偏移够大才迈步 —— 这正是 crawler.js 的步态驱动力。
+        # 偏移够大才迈步 —— 这正是阈值步态的驱动力。
         #
         # **必须换成局部单位**：`advance()` 活在蜘蛛的局部坐标系里
         # （`to_screen` 会把局部坐标乘 `unit` 才是像素），喂像素进去等于
