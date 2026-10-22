@@ -43,15 +43,18 @@ check("八色微光不重复",
       "→ %d" % len({L.aura for L in steppers}))
 check("触须更短", all(P.full < S.full for P in palps for S in steppers))
 # 骨长比例不再锁死具体数值（2026-10-22 起 L1/L2 是调参项，改了就跟着变），
-# 但必须守住它的**不变量**：两段和恒为 1.20×reach，且 full == l1+l2。
+# 但必须守住它的**不变量**：两段和恒为 LEG_SUM×reach，且 full == l1+l2。
 # 这个和值是所有「占腿长比例」阈值（OVER/PLACE/抬腿夹取）的分母，
-# 一旦漂了，那些阈值在像素上的含义会整体偏移 —— 这不是能随便改的。
+# 一旦漂了，那些阈值在像素上的含义会整体偏移 —— 改和值必须同时改这个常量。
+#
+# 版本：上游 1.20 → v1(L1/L2 微调) 1.20 → v2(和值拉开) **1.26**（腿全长 +5%）。
+LEG_SUM = 1.26
 check("骨长比例 = CS.L1_FRAC / CS.L2_FRAC",
       all(abs(L.l1 / L.reach - CS.L1_FRAC) < 1e-6 and
           abs(L.l2 / L.reach - CS.L2_FRAC) < 1e-6
           for L in spider.legs))
-check("骨长两段和恒为 1.20×reach（阈值分母不许漂）",
-      abs(CS.L1_FRAC + CS.L2_FRAC - 1.20) < 1e-9,
+check("骨长两段和恒为 %.2f×reach（阈值分母不许漂）" % LEG_SUM,
+      abs(CS.L1_FRAC + CS.L2_FRAC - LEG_SUM) < 1e-9,
       "→ %.4f" % (CS.L1_FRAC + CS.L2_FRAC))
 check("full == l1 + l2",
       all(abs(L.full - (L.l1 + L.l2)) < 1e-9 for L in spider.legs))
