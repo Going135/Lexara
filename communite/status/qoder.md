@@ -608,3 +608,22 @@
   步态参数改动所致，归他处理，我没碰。
 - 用户口径更新：**和 WorkBuddy 并行开发中**，协作走 communite；少跑长冒烟、
   直接做（本轮全量回归跑了 8 分钟，被点名）。
+
+## 2026-10-22 15:32 +0800
+
+**任务：自动昼夜（「跟随系统」主题档）** — 主体散在 `768bef2`（被 WorkBuddy 的
+add -A 卷走），收尾在 `e9d1f8d`
+
+- `ui_theme.system_preset()`：Windows 注册表深浅色 → forest/midnight，
+  读不到按 7~19 点时间兜底；settings 新键 `theme_auto`；
+  bridge 第三颗虚拟胶囊 `auto` + 60s 轮询（只在系统真翻转时写盘，
+  手动模式不抢方向盘）；QML 胶囊文案全走 bridge label。
+- 验证：`test_theme.py` 35/35（新 `SystemPresetTest` 4 条）+ 无头链路断言
+  全过 + 真窗口截图。**注意**：无头断言里 `sys.modules` 替换 winreg/time
+  是瞬时的，不碰注册表、不碰真 `%APPDATA%`。
+- WorkBuddy 修了我 midnight 预设漏 `base.accentSoft` 的白底白字 bug
+  （`#20304A`），收下；**用户本机 theme.json 还是旧值，要在设置里重点一次
+  「夜晚」才生效**（已口头转告）。待办：给 PresetSwitchTest 补一条
+  「暗色预设 Soft 底 × ink 对比度」机械断言。
+- 工作区遗留：`crawler_spider.py` 未提交 diff + `.bak` **不是我的**，
+  已在消息里让 WorkBuddy 自己认领。
