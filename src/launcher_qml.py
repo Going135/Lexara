@@ -633,9 +633,15 @@ class LauncherBridge(QObject):
     #: 「跟随系统」不是配色，是第三颗胶囊的虚拟 id（不进 PRESETS）。
     THEME_AUTO_ID = "auto"
 
+    #: 面板上用的短名：PRESETS 里的 label（「墨绿 · 象牙白（默认）」）是给
+    #: 命令行列表看的，塞进 26px 高的胶囊只会撑破行。
+    UI_THEME_LABELS = {"forest": "白天", "midnight": "夜晚"}
+
     themePresets = Property(
         "QVariantList",
-        lambda self: [{"id": pid, "label": ui_theme.PRESETS[pid][0]}
+        lambda self: [{"id": pid,
+                       "label": LauncherBridge.UI_THEME_LABELS.get(
+                           pid, ui_theme.PRESETS[pid][0])}
                       for pid in LauncherBridge.UI_THEME_PRESETS
                       if pid in ui_theme.PRESETS]
         + [{"id": LauncherBridge.THEME_AUTO_ID, "label": "跟随系统"}],

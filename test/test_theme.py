@@ -260,6 +260,71 @@ class PresetSwitchTest(unittest.TestCase):
                 os.unlink(path)
 
 
+class SystemPresetTest(unittest.TestCase):
+    """「跟随系统」的判定：注册表优先，读不到才按时间近似。
+
+    自动档最怕的是**没有结果**（None 会让三个调用方各自兜底出三个口径），
+    所以两条路径都必须落在 DAY/NIGHT 两个预设之一上。
+    """
+
+    def test_registry_dark_and_light(self):
+        real_winreg = sys.modules.get("winreg")
+        try:
+            class _Key:
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+
+            class FakeWinreg:
+                HKEY_CURRENT_USER = 0
+                def __init__(self, value): self.value = value
+                def OpenKey(self, *a): return _Key()
+                def QueryValueEx(self, key, name): return (self.value, 4)
+
+            sys.modules["winreg"] = FakeWinreg(0)
+            self.assertEqual(ui_theme.system_preset(), ui_theme.NIGHT_PRESET)
+            sys.modules["winreg"] = FakeWinreg(1)
+            self.assertEqual(ui_theme.system_preset(), ui_theme.DAY_PRESET)
+        finally:
+            sys.modules["winreg"] = real_winreg
+
+    def test_time_fallback_always_decides(self):
+        real_winreg = sys.modules.get("winreg")
+        real_time = sys.modules.get("time")
+        try:
+            class DeadWinreg:
+                HKEY_CURRENT_USER = 0
+                def OpenKey(self, *a): raise OSError("精简系统没有这个键")
+            sys.modules["winreg"] = DeadWinreg()
+            for hour, want in ((12, ui_theme.DAY_PRESET), (23, ui_theme.NIGHT_PRESET)):
+                class FakeTime:
+                    def localtime(self):
+                        return type("T", (), {"tm_hour": hour})()
+                sys.modules["time"] = FakeTime()
+                self.assertEqual(ui_theme.system_preset(), want)
+        finally:
+            sys.modules["winreg"] = real_winreg
+            sys.modules["time"] = real_time
+
+    def test_settings_keys_validate(self):
+        import settings_store
+        handle, path = tempfile.mkstemp(prefix="lexara_settings_", suffix=".json")
+        os.close(handle)
+        os.unlink(path)
+        try:
+            s = settings_store.Settings(path=path)
+            self.assertIs(s.values["theme_auto"], False)
+            self.assertEqual(s.values["theme_preset"], "forest")
+            s.update({"theme_auto": True, "theme_preset": "no-such-preset"})
+            self.assertIs(s.values["theme_auto"], True)
+            self.assertEqual(s.values["theme_preset"], "forest",
+                             "非法预设 id 必须退回默认，不许存脏值")
+            fresh = settings_store.Settings(path=path)
+            self.assertIs(fresh.values["theme_auto"], True)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+
 class StoreTest(unittest.TestCase):
     """热重载：文件一变，QML 那边的值必须跟着变（不用重启）。"""
 

@@ -1646,9 +1646,9 @@ ApplicationWindow {
                             }
 
                             // ---------------- 界面主题 --------------------------
-                            // 预设列表和当前选中都由桥接从 ui_theme.PRESETS /
-                            // theme.json 的 `_preset` 透出，这里不写死颜色也
-                            // 不写死 id；点一颗胶囊 = bridge 整套盖写 theme.json，
+                            // 预设列表（含「跟随系统」虚拟档）和当前选中都由桥接
+                            // 透出，label 也在桥接侧，这里不写死颜色/id/文案；
+                            // 点一颗胶囊 = bridge 整套盖写 theme.json，
                             // ThemeStore 发信号，全窗（含罐子、热力图）即时重绘。
                             RowLayout {
                                 Layout.fillWidth: true
@@ -1663,9 +1663,7 @@ ApplicationWindow {
                                     model: bridge.themePresets
                                     delegate: PillButton {
                                         required property var modelData
-                                        text: modelData.id === "forest" ? "白天"
-                                              : modelData.id === "midnight" ? "夜晚"
-                                              : modelData.label
+                                        text: modelData.label
                                         checked: bridge.currentThemePreset === modelData.id
                                         onClicked: bridge.setThemePreset(modelData.id)
                                     }
@@ -1674,7 +1672,8 @@ ApplicationWindow {
                             }
                             Label {
                                 Layout.fillWidth: true
-                                text: "白天是墨绿 · 象牙白，夜晚是蓝黑；只改启动台配色，桌宠皮肤不受影响。"
+                                text: "白天是墨绿 · 象牙白，夜晚是蓝黑；「跟随系统」按 Windows "
+                                      + "深浅色自动切换（约一分钟内跟上）。只改启动台配色，桌宠皮肤不受影响。"
                                 font.pixelSize: 10
                                 color: root.muted
                                 wrapMode: Text.Wrap
