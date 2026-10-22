@@ -109,6 +109,11 @@ DEFAULTS: Dict[str, Any] = {
     #: ★ 它与「开机时启动词蛛」是**两个独立设置**：后者是 Windows 启动项，
     #:   真实状态存在系统 Startup 文件夹里（`autostart.py`），这里不存副本。
     "auto_deploy_on_start": True,
+    #: ---- 界面主题（2026-10-22 新增）--------------------------------------
+    #: 启动台「白天/夜晚」切换选中的 `ui_theme.PRESETS` 预设 id。
+    #: **真源是 theme.json 里的 `_preset`**，这里存的是副本 —— 给 Widgets
+    #: 老路径和 theme.json 被外部手改时兜底，也保证「恢复默认」能切回 forest。
+    "theme_preset": "forest",
 }
 
 
@@ -124,6 +129,13 @@ def _skin_id(value: Any) -> str:
     from spider_painter import SKIN_SPECS
     key = str(value).strip().lower()
     return key if key in SKIN_SPECS else DEFAULTS["skin"]
+
+
+def _theme_preset_id(value: Any) -> str:
+    """主题预设 ID 白名单校验（同 `_skin_id`，惰性导入避免设置层拖进 Qt）。"""
+    from ui_theme import PRESETS
+    key = str(value).strip().lower()
+    return key if key in PRESETS else DEFAULTS["theme_preset"]
 
 
 #: 「最大识词」的**可选档位**（2026-10-19 从「连续 1~48 滑杆」改成四档）。
@@ -175,6 +187,7 @@ BOUNDS: Dict[str, Callable[[Any], Any]] = {
     "sense_hz": lambda v: float(min(SENSE_HZ_RANGE[1],
                                     max(SENSE_HZ_RANGE[0], float(v)))),
     "auto_deploy_on_start": bool,
+    "theme_preset": _theme_preset_id,
 }
 
 

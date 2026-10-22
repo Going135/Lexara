@@ -208,6 +208,9 @@ def cmd_set(args, path: str) -> int:
         print("%s--dry-run：没有落盘%s" % (_DIM, _RESET))
         return 0
 
+    # 手改单个键之后，文件内容已经不等于任何一套预设；把「当前预设」标记摘掉，
+    # 别让设置面板继续高亮一颗其实已经不准的胶囊。
+    updated.pop("_preset", None)
     ui_theme.write_file(path, updated)
     print("\n已写入 %s" % path)
     print(_DIM + "运行中的启动器会在 0.2 秒内自己重绘（不用重启）。" + _RESET)
@@ -275,8 +278,7 @@ def cmd_preset(args, path: str) -> int:
         return 2
     label, overrides = ui_theme.PRESETS[args.name]
     # 预设 = 默认 + 覆盖（不是「在现状上叠加」），否则两套预设会互相污染
-    updated = dict(ui_theme.DEFAULT_VALUES)
-    updated.update(overrides)
+    updated = ui_theme.apply_preset_to_raw(_load_raw(path), args.name)
     if args.dry_run:
         print("%s--dry-run：会写入 %d 个键%s" % (_DIM, len(updated), _RESET))
         return 0

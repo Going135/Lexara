@@ -431,6 +431,54 @@ PRESETS: Dict[str, Tuple[str, Dict[str, Any]]] = {
         "btn.pillHoverBg": "#2A3033",
         "heat.empty": "#2A3134",
     }),
+    "midnight": ("蓝黑 · 夜晚", {
+        # 蓝黑版夜间：外壳压成深夜蓝，卡片留在「蓝墨」档，正文用偏冷的雾白。
+        # 和 ink 一样必须连文字/悬停/输入框一起覆盖，漏一项就是白底白字。
+        "base.ink": "#E8EEF7",
+        "base.text": "#D2DAE6",
+        "base.muted": "#8F9BAD",
+        "base.subtle": "#68727F",
+        "base.line": "#2A3B52",
+        "base.card": "#16222F",
+        "base.panel": "#1B2836",
+        "base.panelAlt": "#18242F",
+        "base.hover": "#233446",
+        "base.warn": "#D8B87A",
+        "base.warnSoft": "#2A2517",
+        "base.warnLine": "#4A3F26",
+        "base.warnChip": "#6A5A34",
+        "base.danger": "#D98C86",
+        "base.dangerSoft": "#2B1F1E",
+        "base.dangerLine": "#4A3331",
+        "base.onDark": "#EAF1FA",
+        "base.onDarkMuted": "#93A6BE",
+        "base.scrim": "#66000000",
+        "base.scrimSoft": "#33000000",
+        "shell.top": "#0A101C",
+        "shell.upper": "#0E1726",
+        "shell.mid": "#16233A",
+        "shell.low": "#182742",
+        "shell.bottom": "#121D31",
+        "hero.top": "#141F33",
+        "hero.bottom": "#182541",
+        "shadow.color": "#02040A",
+        "shadow.strength": 0.06,
+        "btn.winHoverBg": "#22FFFFFF",
+        "btn.navHoverBg": "#1E2D42",
+        "btn.pillHoverBg": "#233446",
+        "btn.inputBg": "#1E2E44",
+        "btn.darkBg": "#24344A",
+        "btn.darkDisabledBg": "#3A4A5E",
+        "btn.primaryDisabledBg": "#3E5A85",
+        "btn.switchOff": "#33455C",
+        # 白纱不归零：JarView 的蜘蛛画在透明底板上，全透会和窗口外沿的桌面
+        # 直接混在一起；128 的白纱在深蓝外壳上像块白板，压到约十分之一。
+        "stage.overlayAlpha": 26,
+        "stage.border": "#3A547088",
+        "heat.empty": "#1E2C3D",
+        "heat.light": "#3E6B96",
+        "heat.deep": "#6FA0D2",
+    }),
 }
 
 
@@ -527,8 +575,43 @@ def read_file(path: Optional[str] = None) -> Tuple[Dict[str, Any], List[str]]:
     return merge(flatten(data))
 
 
+def read_preset_id(path: Optional[str] = None) -> Optional[str]:
+    """读主题文件里的 `_preset` 元数据（设置面板的高亮依据）。
+
+    只认已注册的预设 id；没有、写坏或指向不存在的预设都返回 None，
+    由调用方自己决定兜底（外部手改 theme.json 的人不该被假装成某个预设）。
+    """
+    path = path or default_path()
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("_preset")
+    return value if isinstance(value, str) and value in PRESETS else None
+
+
+def apply_preset_to_raw(raw: Dict[str, Any], preset: str) -> Dict[str, Any]:
+    """把预设盖到一份原始令牌表上：先回默认再套覆盖，不留旧预设的残色。"""
+    overrides = PRESETS[preset][1]
+    values = dict(DEFAULT_VALUES)
+    values.update(overrides)
+    for key, value in raw.items():
+        if key.startswith("_") and key not in SPEC:
+            values[key] = value       # 元数据（_preset 等）原样带走
+    values["_preset"] = preset
+    return values
+
+
 def write_file(path: Optional[str], values: Dict[str, Any], header: Optional[str] = None) -> str:
-    """原子写。只写令牌（引用原样保留），外加一段 `_help` 说明。"""
+    """原子写。只写令牌（引用原样保留），外加一段 `_help` 说明。
+
+    `values` 里下划线开头的键（如 `_preset`）当作元数据原样带走 —— 设置面板
+    靠它记住「用户选的是哪套预设」，读文件时 `flatten` 会跳过这类键，
+    不会污染令牌表。
+    """
     path = path or default_path()
     directory = os.path.dirname(os.path.abspath(path))
     if directory:
@@ -537,6 +620,9 @@ def write_file(path: Optional[str], values: Dict[str, Any], header: Optional[str
         "_help": header or "LEXARA 启动台主题。改完保存即可，运行中的启动器会自动重载。"
                           "键的说明见 python tools/theme_tool.py list",
     }
+    for key, value in values.items():
+        if key.startswith("_") and key not in SPEC:
+            payload[key] = value
     payload.update(unflatten({k: v for k, v in values.items() if k in SPEC}))
     temp = path + ".tmp"
     with open(temp, "w", encoding="utf-8") as handle:
@@ -620,6 +706,11 @@ class ThemeStore(QObject):
         values, problems = read_file(self._path)
         self._values = values
         self._raw, _ = read_raw(self._path)
+        # `flatten` 会跳下划线键，所以 `_preset` 元数据要单独接住带进 `_raw`：
+        # 之后任何一次 `save()`（含外部调参的热重载回写）都不该把它洗掉。
+        preset = read_preset_id(self._path)
+        if preset:
+            self._raw["_preset"] = preset
         self._problems = problems
         for message in problems:
             self.problem.emit(message)
@@ -670,6 +761,26 @@ class ThemeStore(QObject):
         self._values = resolve_refs(raw)
         self.save()
         self.valuesChanged.emit()
+
+    # ---- 预设 -------------------------------------------------------------
+    def current_preset(self) -> Optional[str]:
+        """主题文件里记录的预设 id（`_preset` 元数据）。"""
+        return read_preset_id(self._path)
+
+    def apply_preset(self, preset: str) -> bool:
+        """整套切换到某个预设并落盘；QML 绑定和 Python 画笔跟着热重载。
+
+        刻意**先回默认再套覆盖**：预设之间的差集最容易留残色（比如从 ink 切
+        回 forest，忘记清 `base.card` 会得到一张深色卡片）。返回 False 表示
+        预设 id 不认识，什么都不写。
+        """
+        if preset not in PRESETS:
+            return False
+        self._raw = apply_preset_to_raw(self._raw, preset)
+        self._values = resolve_refs(self._raw)
+        self.save()
+        self.valuesChanged.emit()
+        return True
 
     # ---- 监听 -----------------------------------------------------------
     def _install_watch(self) -> None:

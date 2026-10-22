@@ -202,6 +202,64 @@ class FileTest(unittest.TestCase):
                          "原子写不该留下 .tmp")
 
 
+class PresetSwitchTest(unittest.TestCase):
+    """设置面板的「白天/夜晚」切换走的就是 apply_preset 这条路。
+
+    最怕的不是颜色不漂亮，而是**残色**：从夜晚切回白天时只要漏一个键
+    （比如 `base.card`），白天界面里就会浮着一块深色卡片，而且只在
+    特定面板出现，很难查。所以这里成对地切、逐项地验。
+    """
+
+    def test_midnight_overrides_are_registered_tokens(self):
+        for key, value in ui_theme.PRESETS["midnight"][1].items():
+            self.assertIn(key, ui_theme.SPEC, "预设覆盖了不存在的令牌：%s" % key)
+            _, error = ui_theme.coerce(key, value, strict=True)
+            self.assertIsNone(error, "midnight.%s 值不合法：%r" % (key, value))
+
+    def test_apply_roundtrip_leaves_no_residue(self):
+        path = _temp_theme()
+        try:
+            raw = ui_theme.apply_preset_to_raw(dict(ui_theme.DEFAULT_VALUES),
+                                               "midnight")
+            ui_theme.write_file(path, raw)
+            self.assertEqual(ui_theme.read_preset_id(path), "midnight")
+            night, problems = ui_theme.read_file(path)
+            self.assertEqual(problems, [])
+            self.assertEqual(night["shell.top"], "#0A101C")
+            # 引用令牌在预设下依然「跟随」，不是被写死
+            self.assertEqual(night["btn.primaryBg"], night["base.accent"])
+
+            back = ui_theme.apply_preset_to_raw(raw, "forest")
+            ui_theme.write_file(path, back)
+            self.assertEqual(ui_theme.read_preset_id(path), "forest")
+            day, _ = ui_theme.read_file(path)
+            self.assertEqual(day["base.card"], "#FFFDF6", "切回白天后卡片底必须回象牙白")
+            self.assertEqual(day["shell.top"], "#1D3D31")
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_unknown_preset_rejected_and_record_survives_badges(self):
+        path = _temp_theme()
+        try:
+            before = dict(ui_theme.DEFAULT_VALUES)
+            before["_preset"] = "midnight"
+            ui_theme.write_file(path, before)
+            # 不存在的预设 id：apply_preset_to_raw 不该被调用（调用方先查表），
+            # 而 `_preset` 写了脏值时读取端必须返回 None，不能假装认识它。
+            data = _read_json(path)
+            data["_preset"] = "not-a-preset"
+            _write_json(path, data)
+            self.assertIsNone(ui_theme.read_preset_id(path))
+            # 脏元数据不影响令牌读取
+            values, problems = ui_theme.read_file(path)
+            self.assertEqual(problems, [])
+            self.assertEqual(values["base.card"], "#FFFDF6")
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+
 class StoreTest(unittest.TestCase):
     """热重载：文件一变，QML 那边的值必须跟着变（不用重启）。"""
 
@@ -243,6 +301,21 @@ class StoreTest(unittest.TestCase):
 
     def test_creates_file(self):
         self.assertTrue(os.path.exists(self.path), "第一次启动要落一份可改的默认文件")
+
+    def test_apply_preset_switches_and_persists(self):
+        """面板点「夜晚」= store.apply_preset：值、文件、`_preset` 三处要一起变。"""
+        self.assertTrue(self.store.apply_preset("midnight"))
+        self.assertEqual(self.store.v["shell.top"], "#0A101C")
+        self.assertEqual(self.store.current_preset(), "midnight")
+        # 外部再改单个键并热重载后，`_preset` 不该被 save() 洗掉
+        data = _read_json(self.path)
+        data["base"]["accent"] = "#E04B3A"
+        _write_json(self.path, data)
+        self._wait(lambda: self.store.v["base.accent"] == "#E04B3A")
+        self.store.save()
+        self.assertEqual(self.store.current_preset(), "midnight")
+        self.assertFalse(self.store.apply_preset("nope"), "未知预设必须拒绝且不动文件")
+        self.assertEqual(self.store.v["shell.top"], "#0A101C")
 
     def test_reload_on_write(self):
         self.assertEqual(self.store.v["btn.primaryBg"], "#2F6BFF")

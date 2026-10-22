@@ -621,6 +621,28 @@ class LauncherBridge(QObject):
                                   notify=changed)
     currentSkin = Property(str, lambda self: str(self._values_now().get("skin", "")),
                            notify=changed)
+    # ---- 界面主题（白天/夜晚）。数据源是 ui_theme.PRESETS，QML 不写死。
+    #: 设置面板只摆这两套 —— ink/ocean/paper 是给 theme_tool 命令行留的，
+    #: 七个胶囊挤在一行里反而没人用得起来。
+    UI_THEME_PRESETS = ("forest", "midnight")
+
+    themePresets = Property(
+        "QVariantList",
+        lambda self: [{"id": pid, "label": ui_theme.PRESETS[pid][0]}
+                      for pid in LauncherBridge.UI_THEME_PRESETS
+                      if pid in ui_theme.PRESETS],
+        notify=changed)
+
+    def _current_theme_preset(self) -> str:
+        """当前预设：theme.json 的 `_preset` 是真源，settings 里的只是副本。"""
+        store = getattr(self, "_theme", None)
+        preset = store.current_preset() if store is not None else None
+        if preset:
+            return preset
+        return str(self._values_now().get("theme_preset") or "forest")
+
+    currentThemePreset = Property(str, lambda self: self._current_theme_preset(),
+                                  notify=changed)
 
     # ---- 背单词（只读 QML 用；所有写操作走 Slot → ReviewSession → Wordbook）
     reviewOverview = Property(
@@ -973,6 +995,28 @@ class LauncherBridge(QObject):
         QTimer.singleShot(5000, self, self._clear_notice)
         return result
 
+    # ------------------------------------------------ 界面主题
+    @Slot(str, result=dict)
+    def setThemePreset(self, preset_id: str) -> dict:
+        """切换启动台整套配色（白天 forest / 夜晚 midnight …）。
+
+        两步要一起做完：把预设整套盖进 theme.json（`ThemeStore.apply_preset`
+        会 emit `valuesChanged`，QML 绑定 + Python 画笔自动重绘），再把选中的
+        id 记进 settings.json 当副本。预设 id 不认识就原样拒绝，不写任何文件。
+        """
+        if preset_id not in ui_theme.PRESETS:
+            return {"ok": False, "message": "未知主题预设 %s" % preset_id}
+        store = getattr(self, "_theme", None)
+        if store is not None:
+            store.apply_preset(preset_id)
+        else:
+            # 无头/测试路径没有 store：直接落文件，语义与 apply_preset 一致。
+            raw, _ = ui_theme.read_raw()
+            ui_theme.write_file(None, ui_theme.apply_preset_to_raw(raw, preset_id))
+        self.launcher._write_settings({"theme_preset": preset_id})
+        self.changed.emit()
+        return {"ok": True, "message": ""}
+
     # ------------------------------------------------ 背单词
     @Slot()
     def openReview(self) -> None:
@@ -1108,6 +1152,9 @@ class LauncherBridge(QObject):
     def resetSettings(self) -> None:
         from settings_store import DEFAULTS
         values = dict(DEFAULTS)
+        # 「恢复默认」恢复的是识词/部署这些行为参数；用户主动选过的界面主题
+        # 不在「捣乱参数」之列，别顺手把夜晚模式跳回白天。
+        values["theme_preset"] = self._current_theme_preset()
         self.launcher._write_settings(values)
         self.launcher.panel.scale_slider.setValue(int(round(values["pet_scale"] * 100)))
         for key, box in self.launcher.panel.checks.items():
