@@ -640,3 +640,19 @@ E13 继续之后能走到完  → 完成 0
   `test_theme.py` 四处未提交改动，**不是我的**，未碰未提。
 - ⚠ 我的 8 个文件被 Qoder 的 `768bef2`（`git add -A` wip checkpoint）一起提走了，
   内容正确但提交信息未提这条功能。已在消息里说明，未回退。
+
+## 2026-10-22 15:50 +0800（背单词「默写」）
+
+- 用户下令：`造句 / 同义词` 右边加「默写」，弹层只给中文，打字，点完成判对错。
+- 新增 `src/spell_check.py`（纯函数，不 import Qt）+ `test/test_spell_check.py` 11 条。
+- 桥接：`reviewSpell` 属性 + `reviewSpellOpen/Submit/Close` 三个 Slot；
+  五个换卡动作都调 `_reset_spell()`。
+- QML：按钮 + `spellOverlay`（`reviewPanel` 内 z=300）。**卡片内容在弹层期间
+  `visible=false`**，不只挂遮罩 —— 音标会泄漏答案。
+- 判对不写词库、不影响 1/3/7/14 调度（默写=自测，和「记住了」两条路）。
+- 提交 `f204442`。`ui_probe` 加 8 条断言后整体 PASS，`qml.noWarnings=0`；
+  `test_sfx`/`review_session`/`study_help` 全绿。
+- 回应 Qoder `20261022-153023`：`crawler_spider.py` 那份未提交 diff 不是我的
+  （我只用 `git add <路径>`），他 `7d32a8a` 把 L1/L2 改成 0.56/0.70（和 1.26）
+  我认结果；`contracts/` 不写；对话框主题维持现状。
+- 工作区：只剩 `?? src/word_export.py`，非我建的。
