@@ -442,6 +442,11 @@ PRESETS: Dict[str, Tuple[str, Dict[str, Any]]] = {
         "base.card": "#16222F",
         "base.panel": "#1B2836",
         "base.panelAlt": "#18242F",
+        # ★ 2026-10-22：这一项之前漏了。`accentSoft` 是「选中 / 高亮」的底色，
+        # 上面坐的文字是 `base.ink`（夜间已翻成雾白）—— 不覆盖它就变成
+        # **白底白字**：背单词卡片的释义框、收藏夹选中项、热力图图例全都读不出来。
+        # 取蓝墨档，既能托住雾白文字，也托得住 `base.accent` 的亮蓝。
+        "base.accentSoft": "#20304A",
         "base.hover": "#233446",
         "base.warn": "#D8B87A",
         "base.warnSoft": "#2A2517",
@@ -603,6 +608,30 @@ def apply_preset_to_raw(raw: Dict[str, Any], preset: str) -> Dict[str, Any]:
             values[key] = value       # 元数据（_preset 等）原样带走
     values["_preset"] = preset
     return values
+
+
+#: 「跟随系统」昼夜映射的两个预设（`theme_tool` 之外的其余预设不参与自动切换）。
+DAY_PRESET = "forest"
+NIGHT_PRESET = "midnight"
+
+
+def system_preset() -> str:
+    """现在该摆哪套：Windows 浅色 → 白天、深色 → 夜晚。
+
+    读 `Apps\\Settings` 的 `AppsUseLightTheme`（注册表不可读/键缺失时按本地
+    时间近似，7:00~19:00 算白天）—— 自动模式总得给个结果，不许返回 None
+    让调用方各自兜底，那才是三处三个口径。
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return DAY_PRESET if int(value) else NIGHT_PRESET
+    except Exception:                   # noqa: BLE001 —— 非 Windows/精简系统/键被删
+        import time
+        return DAY_PRESET if 7 <= time.localtime().tm_hour < 19 else NIGHT_PRESET
 
 
 def write_file(path: Optional[str], values: Dict[str, Any], header: Optional[str] = None) -> str:

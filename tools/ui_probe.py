@@ -124,8 +124,21 @@ def _cases(bridge, settings, book, check) -> None:
     check("review.card.hidden", card["revealed"], False)
     check("review.card.hasMeaning", bool(card["meaning"]), True)
 
+    # ---- AI 辅助（造句 / 同义词）
+    # 没揭示答案之前一律不接：跳过「先自己回忆」会让卡片退化成例句书。
+    bridge.reviewHelpRequest("sentence")
+    check("help.gatedByReveal", bridge.reviewHelp["state"], "idle")
+
     bridge.reviewReveal()
     check("review.card.revealed", bridge.reviewCard["revealed"], True)
+
+    # 未配置模型时**不能静默失败**：要说清缺什么、去哪填。
+    bridge.reviewHelpRequest("synonym")
+    check("help.notConfigured", bridge.reviewHelp["code"], "not_configured")
+    check("help.modeEchoed", bridge.reviewHelp["modeLabel"], "同义词")
+    check("help.reasonNamed", "API Key" in bridge.reviewHelp["error"], True)
+    bridge.reviewHelpClose()
+    check("help.idleAfterClose", bridge.reviewHelp["state"], "idle")
 
     word = bridge.reviewCard["word"]
     # 注意：`book.get()` 返回的是**活的 Item 对象**，直接持有它会在评分后被就地

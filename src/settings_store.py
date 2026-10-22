@@ -114,6 +114,9 @@ DEFAULTS: Dict[str, Any] = {
     #: **真源是 theme.json 里的 `_preset`**，这里存的是副本 —— 给 Widgets
     #: 老路径和 theme.json 被外部手改时兜底，也保证「恢复默认」能切回 forest。
     "theme_preset": "forest",
+    #: 「跟随系统」开关：开 = 按 Windows 深浅色自动在 forest/midnight 间切换，
+    #: 此时 `theme_preset` 存的是用户上一次**手动**选的预设（切回手动时还原）。
+    "theme_auto": False,
 }
 
 
@@ -188,6 +191,7 @@ BOUNDS: Dict[str, Callable[[Any], Any]] = {
                                     max(SENSE_HZ_RANGE[0], float(v)))),
     "auto_deploy_on_start": bool,
     "theme_preset": _theme_preset_id,
+    "theme_auto": bool,
 }
 
 

@@ -47,6 +47,7 @@ import ui_theme
 from review_session import DEFAULT_SESSION_LIMIT, ReviewSession, due_overview
 from ai.chat import EXAMPLE_PROMPTS, ChatService
 from ai.config import AIConfig, SecretStore
+from ai.study_help import StudyHelpService
 from help_content import STEPS, STATE_LABELS
 import ocr_registry
 
@@ -549,6 +550,10 @@ class LauncherBridge(QObject):
         #: 只有**真的拿到回复**才算一次「主动 AI 提问」学习活动（深绿）。
         #: 失败 / 取消 / 未配置都不会走到这里。
         self._chat.askSucceeded.connect(self._on_ask_succeeded)
+        #: 背单词卡片的「造句 / 同义词」。**独立的服务实例**：它不该把消息塞进
+        #: 对话页，也不该受对话上下文影响（同一张卡片两次点击要给同样的东西）。
+        self._study_help = StudyHelpService(self._ai_config, self)
+        self._study_help.changed.connect(self._on_chat_changed)
         self._last_test: dict = {}
         #: 学习日历 / 成就的缓存键（事件条数 + 今天），避免 250ms 轮询里重算 371 格
         self._activity_key = None
@@ -621,16 +626,19 @@ class LauncherBridge(QObject):
                                   notify=changed)
     currentSkin = Property(str, lambda self: str(self._values_now().get("skin", "")),
                            notify=changed)
-    # ---- 界面主题（白天/夜晚）。数据源是 ui_theme.PRESETS，QML 不写死。
-    #: 设置面板只摆这两套 —— ink/ocean/paper 是给 theme_tool 命令行留的，
-    #: 七个胶囊挤在一行里反而没人用得起来。
+    # ---- 界面主题（白天/夜晚/跟随系统）。预设数据源是 ui_theme.PRESETS。
+    #: 设置面板只摆这两套 + 一个自动档 —— ink/ocean/paper 是给 theme_tool
+    #: 命令行留的，七个胶囊挤在一行里反而没人用得起来。
     UI_THEME_PRESETS = ("forest", "midnight")
+    #: 「跟随系统」不是配色，是第三颗胶囊的虚拟 id（不进 PRESETS）。
+    THEME_AUTO_ID = "auto"
 
     themePresets = Property(
         "QVariantList",
         lambda self: [{"id": pid, "label": ui_theme.PRESETS[pid][0]}
                       for pid in LauncherBridge.UI_THEME_PRESETS
-                      if pid in ui_theme.PRESETS],
+                      if pid in ui_theme.PRESETS]
+        + [{"id": LauncherBridge.THEME_AUTO_ID, "label": "跟随系统"}],
         notify=changed)
 
     def _current_theme_preset(self) -> str:
@@ -641,8 +649,14 @@ class LauncherBridge(QObject):
             return preset
         return str(self._values_now().get("theme_preset") or "forest")
 
-    currentThemePreset = Property(str, lambda self: self._current_theme_preset(),
-                                  notify=changed)
+    themeAuto = Property(bool, lambda self: bool(
+        self._values_now().get("theme_auto", False)), notify=changed)
+
+    currentThemePreset = Property(
+        str,
+        lambda self: (LauncherBridge.THEME_AUTO_ID if self.themeAuto
+                      else self._current_theme_preset()),
+        notify=changed)
 
     # ---- 背单词（只读 QML 用；所有写操作走 Slot → ReviewSession → Wordbook）
     reviewOverview = Property(
@@ -651,6 +665,15 @@ class LauncherBridge(QObject):
     reviewSummary = Property(dict, lambda self: self._review.summary(),
                              notify=changed)
     reviewStage = Property(str, lambda self: self._review_stage, notify=changed)
+    #: AI 辅助（造句 / 同义词）的当前状态。字段：
+    #: `state` idle|loading|done|error、`word`、`mode`、`modeLabel`、
+    #: `text`、`error`、`code`。QML 只读，动作走 `reviewHelpRequest()`。
+    reviewHelp = Property(dict, lambda self: self._study_help.state,
+                          notify=changed)
+    #: 模型是否配置好。**没配时按钮仍然可点**：点了会得到一条「缺什么、去哪填」
+    #: 的说明 —— 比一个灰按钮更能让用户知道这功能存在（`aiReady` 同理）。
+    reviewHelpReady = Property(bool, lambda self: self._ai_config.configured(),
+                               notify=changed)
 
     # ---- AI 对话 / 配置
     aiReady = Property(bool, lambda self: self._ai_config.configured(),
@@ -996,26 +1019,60 @@ class LauncherBridge(QObject):
         return result
 
     # ------------------------------------------------ 界面主题
-    @Slot(str, result=dict)
-    def setThemePreset(self, preset_id: str) -> dict:
-        """切换启动台整套配色（白天 forest / 夜晚 midnight …）。
-
-        两步要一起做完：把预设整套盖进 theme.json（`ThemeStore.apply_preset`
-        会 emit `valuesChanged`，QML 绑定 + Python 画笔自动重绘），再把选中的
-        id 记进 settings.json 当副本。预设 id 不认识就原样拒绝，不写任何文件。
-        """
-        if preset_id not in ui_theme.PRESETS:
-            return {"ok": False, "message": "未知主题预设 %s" % preset_id}
+    def _apply_theme_preset(self, preset: str) -> None:
         store = getattr(self, "_theme", None)
         if store is not None:
-            store.apply_preset(preset_id)
+            store.apply_preset(preset)
         else:
             # 无头/测试路径没有 store：直接落文件，语义与 apply_preset 一致。
             raw, _ = ui_theme.read_raw()
-            ui_theme.write_file(None, ui_theme.apply_preset_to_raw(raw, preset_id))
-        self.launcher._write_settings({"theme_preset": preset_id})
+            ui_theme.write_file(None, ui_theme.apply_preset_to_raw(raw, preset))
+
+    @Slot(str, result=dict)
+    def setThemePreset(self, preset_id: str) -> dict:
+        """切换启动台整套配色（白天 forest / 夜晚 midnight / 跟随系统 auto）。
+
+        两步要一起做完：把预设整套盖进 theme.json（`ThemeStore.apply_preset`
+        会 emit `valuesChanged`，QML 绑定 + Python 画笔自动重绘），再把选中的
+        id 记进 settings.json 当副本。自动档下 `theme_preset` 存的是用户
+        **上一次手动**选的预设，切回手动时那颗胶囊还能还原。不认识就拒绝。
+        """
+        if preset_id == self.THEME_AUTO_ID:
+            target = ui_theme.system_preset()
+            self._apply_theme_preset(target)
+            self.launcher._write_settings({"theme_preset": target,
+                                           "theme_auto": True})
+            self.changed.emit()
+            return {"ok": True, "message": ""}
+        if preset_id not in ui_theme.PRESETS:
+            return {"ok": False, "message": "未知主题预设 %s" % preset_id}
+        self._apply_theme_preset(preset_id)
+        self.launcher._write_settings({"theme_preset": preset_id,
+                                       "theme_auto": False})
         self.changed.emit()
         return {"ok": True, "message": ""}
+
+    def _start_theme_follow_timer(self) -> None:
+        """60 秒看一眼系统深浅色。轮询很便宜（一次注册表读 + 两次 dict.get），
+        而系统换深浅色没有可靠的 Qt 事件可挂；只有真变了才写盘重绘。"""
+        timer = QTimer(self)
+        timer.setInterval(60_000)
+        timer.timeout.connect(self._follow_system_theme)
+        timer.start()
+        self._theme_follow_timer = timer
+
+    def _follow_system_theme(self) -> None:
+        try:
+            if not bool(self._values_now().get("theme_auto", False)):
+                return
+            target = ui_theme.system_preset()
+            if self._current_theme_preset() == target:
+                return
+            self._apply_theme_preset(target)
+            self.launcher._write_settings({"theme_preset": target})
+            self.changed.emit()
+        except Exception as error:          # noqa: BLE001 —— 定时器不许把主循环带崩
+            self._log("[theme] 跟随系统失败: %r" % (error,))
 
     # ------------------------------------------------ 背单词
     @Slot()
@@ -1028,6 +1085,7 @@ class LauncherBridge(QObject):
     def startReviewSession(self, due_only: bool = False) -> None:
         summary = self._review.start(include_upcoming=not bool(due_only))
         self._review_stage = "card" if summary["total"] else "home"
+        self._study_help.reset()          # 新一局：上一张的 AI 结果不能跟过来
         self.changed.emit()
 
     @Slot()
@@ -1045,17 +1103,21 @@ class LauncherBridge(QObject):
             sfx.play_ding()
         if self._review.summary()["finished"]:
             self._review_stage = "done"
+        # 卡片已经换人：在途的造句请求作废，避免「上一张的例句」盖到下一张。
+        self._study_help.reset()
         self.changed.emit()
 
     @Slot(int)
     def reviewStep(self, delta: int) -> None:
         self._review.step(int(delta))
+        self._study_help.reset()
         self.changed.emit()
 
     @Slot()
     def reviewRetryWrong(self) -> None:
         summary = self._review.start_wrong_only()
         self._review_stage = "card" if summary["total"] else "done"
+        self._study_help.reset()
         self.changed.emit()
 
     @Slot()
@@ -1063,6 +1125,27 @@ class LauncherBridge(QObject):
         """退出本轮。已产生的复习记录保留（不会被回滚）。"""
         self._review.exit_session()
         self._review_stage = "home"
+        self._study_help.reset()
+        self.changed.emit()
+
+    # ---- AI 辅助（造句 / 同义词）
+    @Slot(str)
+    def reviewHelpRequest(self, mode: str) -> None:
+        """点了「造句」或「同义词」。**只在答案已揭示时有效** ——
+
+        没看到释义就让它造句，等于把「先回忆再看答案」这一步跳过去，
+        卡片就退化成一本例句书了。
+        """
+        card = self._review.card()
+        if not card.get("revealed"):
+            return
+        self._study_help.request(card.get("word") or "",
+                                 card.get("meaning") or "", str(mode or ""))
+
+    @Slot()
+    def reviewHelpClose(self) -> None:
+        """收起辅助结果（**保留缓存**：再点同一个词是秒回）。"""
+        self._study_help.reset()
         self.changed.emit()
 
     # ---- 信号转发（ChatService 在后台线程发回来）
@@ -1153,8 +1236,9 @@ class LauncherBridge(QObject):
         from settings_store import DEFAULTS
         values = dict(DEFAULTS)
         # 「恢复默认」恢复的是识词/部署这些行为参数；用户主动选过的界面主题
-        # 不在「捣乱参数」之列，别顺手把夜晚模式跳回白天。
+        # （含「跟随系统」开关）不在「捣乱参数」之列，别顺手跳回白天。
         values["theme_preset"] = self._current_theme_preset()
+        values["theme_auto"] = bool(self._values_now().get("theme_auto", False))
         self.launcher._write_settings(values)
         self.launcher.panel.scale_slider.setValue(int(round(values["pet_scale"] * 100)))
         for key, box in self.launcher.panel.checks.items():
@@ -1294,6 +1378,7 @@ class LauncherBridge(QObject):
         self._theme.valuesChanged.connect(self._on_theme_changed)
         ui_theme.set_active(self._theme)
         self._log("[theme] %s" % self._theme.path)
+        self._start_theme_follow_timer()
         self._engine = build_engine(self, self._theme, parent=self,
                                     on_warnings=self._qml_warnings)
         roots = self._engine.rootObjects()

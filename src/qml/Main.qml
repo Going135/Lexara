@@ -2273,6 +2273,13 @@ ApplicationWindow {
                 property bool isPanel: true
                 property bool collapsed: false
 
+                //: AI 辅助（造句 / 同义词）的状态，唯一来源是 Python 侧
+                //: `study_help.StudyHelpService.state`。QML **不算任何业务**：
+                //: 「能不能点」「显示什么」全看这里的 state。
+                readonly property var help: bridge.reviewHelp
+                readonly property string helpState: help.state || "idle"
+                readonly property bool helpLoading: helpState === "loading"
+
                 MouseArea {
                     anchors.fill: parent
                     acceptedButtons: Qt.AllButtons
@@ -2431,70 +2438,222 @@ ApplicationWindow {
                             color: root.panelAlt
                             border.color: root.line
                             border.width: 1
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                anchors.margins: 24
-                                spacing: 9
-                                Label {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: bridge.reviewCard.word || ""
-                                    font.pixelSize: 30
-                                    font.bold: true
-                                    color: root.ink
-                                }
-                                Label {
-                                    visible: (bridge.reviewCard.phonetic || "") !== ""
-                                    Layout.alignment: Qt.AlignHCenter
-                                    // 没有卡片时 bridge.reviewCard 是 {}，
-                                    // 直接取字段会拿到 undefined（QML 报警告），
-                                    // 所以所有文本字段都走 || "" 兜底。
-                                    text: bridge.reviewCard.phonetic || ""
-                                    font.pixelSize: 13
-                                    color: root.muted
-                                }
-                                RowLayout {
-                                    visible: (bridge.reviewCard.level || "") !== ""
-                                    Layout.alignment: Qt.AlignHCenter
-                                    spacing: 5
+
+                            //: 卡片内容整体可滚动。**为什么不是 `anchors.centerIn`**：
+                            //: 展开 AI 辅助之后内容会超过卡片高度，居中摆放会把
+                            //: 首尾两头同时顶出边框（边框没 clip，看起来像溢出到
+                            //: 标题栏上）。用 Flickable + 「内容比视口矮就垂直居中」
+                            //: 的 y，既保持原来的观感，又不会真的丢内容。
+                            Flickable {
+                                id: cardScroll
+                                anchors.fill: parent
+                                anchors.margins: 18
+                                clip: true
+                                contentWidth: width
+                                contentHeight: Math.max(height, cardCol.implicitHeight)
+                                boundsBehavior: Flickable.StopAtBounds
+                                flickableDirection: Flickable.VerticalFlick
+                                interactive: contentHeight > height + 1
+
+                                ColumnLayout {
+                                    id: cardCol
+                                    width: cardScroll.width
+                                    //: 内容比视口矮时保持原来的「垂直居中」观感；
+                                    //: 高了就从顶部排起，交给 Flickable 滚。
+                                    y: Math.max(0, (cardScroll.height - cardCol.implicitHeight) / 2)
+                                    spacing: 9
                                     Label {
-                                        text: bridge.reviewCard.level || ""
-                                        font.pixelSize: 11
-                                        color: root.accent
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: bridge.reviewCard.word || ""
+                                        font.pixelSize: 30
+                                        font.bold: true
+                                        color: root.ink
                                     }
                                     Label {
-                                        text: bridge.reviewCard.stageLabel || ""
-                                        font.pixelSize: 11
+                                        visible: (bridge.reviewCard.phonetic || "") !== ""
+                                        Layout.alignment: Qt.AlignHCenter
+                                        // 没有卡片时 bridge.reviewCard 是 {}，
+                                        // 直接取字段会拿到 undefined（QML 报警告），
+                                        // 所以所有文本字段都走 || "" 兜底。
+                                        text: bridge.reviewCard.phonetic || ""
+                                        font.pixelSize: 13
                                         color: root.muted
                                     }
-                                }
-                                Rectangle {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    visible: bridge.reviewCard.revealed === true
-                                    width: answerCol.implicitWidth + 28
-                                    height: answerCol.implicitHeight + 20
-                                    radius: 10
-                                    color: root.accentSoft
-                                    ColumnLayout {
-                                        id: answerCol
-                                        anchors.centerIn: parent
-                                        spacing: 4
+                                    RowLayout {
+                                        visible: (bridge.reviewCard.level || "") !== ""
+                                        Layout.alignment: Qt.AlignHCenter
+                                        spacing: 5
                                         Label {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            Layout.preferredWidth: 460
-                                            horizontalAlignment: Text.AlignHCenter
-                                            wrapMode: Text.Wrap
-                                            text: bridge.reviewCard.meaning || ""
-                                            font.pixelSize: 14
-                                            color: root.ink
+                                            text: bridge.reviewCard.level || ""
+                                            font.pixelSize: 11
+                                            color: root.accent
+                                        }
+                                        Label {
+                                            text: bridge.reviewCard.stageLabel || ""
+                                            font.pixelSize: 11
+                                            color: root.muted
                                         }
                                     }
-                                }
-                                Label {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    visible: bridge.reviewCard.revealed !== true
-                                    text: "先在心里想一下中文意思，然后按空格或点下面的按钮"
-                                    font.pixelSize: 12
-                                    color: root.muted
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        visible: bridge.reviewCard.revealed === true
+                                        width: answerCol.implicitWidth + 28
+                                        height: answerCol.implicitHeight + 20
+                                        radius: 10
+                                        color: root.accentSoft
+                                        ColumnLayout {
+                                            id: answerCol
+                                            anchors.centerIn: parent
+                                            spacing: 4
+                                            Label {
+                                                Layout.alignment: Qt.AlignHCenter
+                                                Layout.preferredWidth: 460
+                                                horizontalAlignment: Text.AlignHCenter
+                                                wrapMode: Text.Wrap
+                                                text: bridge.reviewCard.meaning || ""
+                                                font.pixelSize: 14
+                                                color: root.ink
+                                            }
+                                        }
+                                    }
+                                    Label {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        visible: bridge.reviewCard.revealed !== true
+                                        text: "先在心里想一下中文意思，然后按空格或点下面的按钮"
+                                        font.pixelSize: 12
+                                        color: root.muted
+                                    }
+
+                                    // ------------------------------------------------ AI 辅助
+                                    //: **只在答案揭示之后才出现**。没看到释义就让它造句，
+                                    //: 等于跳过「先自己回忆」这一步，卡片就退化成一本例句书了。
+                                    RowLayout {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        Layout.topMargin: 2
+                                        visible: bridge.reviewCard.revealed === true
+                                        spacing: 8
+                                        MiniButton {
+                                            text: reviewPanel.helpLoading
+                                                  && bridge.reviewHelp.mode === "sentence"
+                                                  ? "造句中…" : "造句"
+                                            enabled: !reviewPanel.helpLoading
+                                            onClicked: bridge.reviewHelpRequest("sentence")
+                                        }
+                                        MiniButton {
+                                            text: reviewPanel.helpLoading
+                                                  && bridge.reviewHelp.mode === "synonym"
+                                                  ? "同义词中…" : "同义词"
+                                            enabled: !reviewPanel.helpLoading
+                                            onClicked: bridge.reviewHelpRequest("synonym")
+                                        }
+                                        Label {
+                                            visible: !bridge.aiReady
+                                            text: "（要先配置模型）"
+                                            font.pixelSize: 11
+                                            color: root.muted
+                                        }
+                                    }
+
+                                    //: 结果框：**固定高度 + 内部滚动**。让卡片随回复变高
+                                    //: 会把下面的「记住了」按钮推得跳一下，而这块内容本来
+                                    //: 就是可选的参考信息，不值得让整个版面跟着抖。
+                                    Rectangle {
+                                        id: helpBox
+                                        Layout.alignment: Qt.AlignHCenter
+                                        Layout.fillWidth: true
+                                        Layout.maximumWidth: 500
+                                        Layout.preferredHeight: 128
+                                        visible: reviewPanel.helpState !== "idle"
+                                        radius: 10
+                                        color: root.panel
+                                        border.width: 1
+                                        border.color: reviewPanel.helpState === "error"
+                                                      ? root.dangerLine : root.line
+
+                                        Label {
+                                            id: helpTitle
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.leftMargin: 12
+                                            anchors.topMargin: 7
+                                            text: {
+                                                var h = bridge.reviewHelp
+                                                var name = h.modeLabel || "AI 辅助"
+                                                if (h.state === "loading")
+                                                    return name + " · 生成中…"
+                                                if (h.state === "error")
+                                                    return name + " · 没成功"
+                                                return name + " · AI 生成"
+                                            }
+                                            font.pixelSize: 11
+                                            color: reviewPanel.helpState === "error"
+                                                   ? root.dangerColor : root.muted
+                                        }
+
+                                        Item {
+                                            id: helpClose
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.rightMargin: 10
+                                            anchors.topMargin: 4
+                                            width: closeLabel.implicitWidth + 10
+                                            height: 20
+                                            Label {
+                                                id: closeLabel
+                                                anchors.centerIn: parent
+                                                text: "收起"
+                                                font.pixelSize: 11
+                                                color: root.muted
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                // 收起**只清显示，不清缓存**：再点同一个词是秒回。
+                                                onClicked: bridge.reviewHelpClose()
+                                            }
+                                        }
+
+                                        Flickable {
+                                            id: helpFlick
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: helpTitle.bottom
+                                            anchors.bottom: parent.bottom
+                                            anchors.leftMargin: 12
+                                            anchors.rightMargin: 12
+                                            anchors.topMargin: 4
+                                            anchors.bottomMargin: 8
+                                            clip: true
+                                            contentWidth: width
+                                            contentHeight: helpBody.contentHeight
+                                            boundsBehavior: Flickable.StopAtBounds
+                                            flickableDirection: Flickable.VerticalFlick
+                                            interactive: contentHeight > height + 1
+
+                                            //: 只读纯文本：模型输出当不可信输入处理，
+                                            //: **不渲染 Markdown**（同对话页的红线）。
+                                            //: 可选可复制 —— 用户想把例句抄进笔记是正当需求。
+                                            TextEdit {
+                                                id: helpBody
+                                                width: helpFlick.width
+                                                text: {
+                                                    var h = bridge.reviewHelp
+                                                    if (h.state === "loading")
+                                                        return "正在向模型请求，通常 2~5 秒…"
+                                                    if (h.state === "error")
+                                                        return h.error || "请求失败。"
+                                                    return h.text || ""
+                                                }
+                                                readOnly: true
+                                                selectByMouse: true
+                                                wrapMode: TextEdit.Wrap
+                                                textFormat: TextEdit.PlainText
+                                                font.pixelSize: 12
+                                                color: reviewPanel.helpState === "error"
+                                                       ? root.dangerColor : root.text
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

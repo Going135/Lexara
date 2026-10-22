@@ -58,6 +58,9 @@ CASES = [
     ("覆盖层只亮框不重画词（§5）", "test/test_overlay_box_only.py", "script"),
     ("词典行业标签", "test/test_industry.py", "script"),
     ("复习会话", "test/test_review_session.py", "unittest"),
+    # 背单词卡片的 AI 辅助（造句 / 同义词）：提示词口径 + 状态机 + 缓存/作废。
+    # 一次网络都不发，worker 是注入的假实现。
+    ("背单词 AI 辅助（造句/同义词）", "test/test_study_help.py", "unittest"),
     # 2026-10-18 新增（任务书 §2.2 / §4 / §5 / §6 / §7）：
     # 收藏夹分类统计、桌宠生命周期幂等、日历/成就口径、导出 PNG、开机自启动。
     ("收藏夹五分类与兜底（§2.2）", "test/test_favorites.py", "unittest"),
