@@ -7,14 +7,16 @@
 from __future__ import annotations
 
 import random
+from html import escape
 
-from PySide6.QtCore import QByteArray, QRectF, QSize, Qt
+from PySide6.QtCore import (QByteArray, QEasingCurve, QPropertyAnimation, QRectF,
+                            QSize, Qt, QTimer)
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFrame,
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget,
-                               QListWidgetItem, QMessageBox, QPushButton,
-                               QScrollArea, QStackedWidget, QVBoxLayout,
-                               QWidget)
+                               QGraphicsOpacityEffect, QHBoxLayout, QLabel,
+                               QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QScrollArea,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 import content
 import lexicon
@@ -24,7 +26,7 @@ import settings_store
 #: 直接从 `crawler_spider` 取，别再在界面层抄一份常量 —— 抄一次就会漂一次，
 #: 之前这里被写成 `("#2F6BFF",) * 8`，八个色条全成了品牌蓝。
 from crawler_spider import LEG_AURA
-from lexara_theme import DIALOG_QSS
+from lexara_theme import DIALOG_QSS, INK, MUTED, SUCCESS
 from review_session import ReviewSession
 
 
@@ -42,6 +44,13 @@ REFRESH_SVG = (
     'fill="none" stroke="#2B2B2B" stroke-width="1.8" stroke-linecap="round">'
     '<path d="M20 11a8 8 0 0 0-14.7-4L4 9"/><path d="M4 5v4h4"/>'
     '<path d="M4 13a8 8 0 0 0 14.7 4L20 15"/><path d="M20 19v-4h-4"/></svg>'
+)
+#: 提示条的对勾。用内联 SVG 而不是「✓」字符：Unicode 对勾在不同字体里
+#: 字重/基线差很多，混排中文时容易变成一条偏上的细线。
+CHECK_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="%s" stroke-width="2.6" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M5 12.6l4.4 4.3L19 7.2"/></svg>' % SUCCESS
 )
 
 def _svg_icon(svg: str, size: int = 18) -> QIcon:
@@ -84,6 +93,115 @@ def _enable_button_cursors(widget: QWidget) -> None:
         button.setCursor(Qt.PointingHandCursor)
 
 
+def _toast_html(main: str, detail: str = "") -> str:
+    """提示条文案：主句保持字重，次句自动退成灰、正常字重。"""
+    if not detail:
+        return escape(main)
+    return ('%s<span style="color:%s;font-weight:400">　·　%s</span>'
+            % (escape(main), MUTED, escape(detail)))
+
+
+class _Toast(QFrame):
+    """浮在对话框底部的轻量提示条：淡入 → 停留 → 淡出。
+
+    为什么不用 `QMessageBox`：收藏是高频动作，每点一次就弹一个要点「确定」的模态框，
+    等于把「收藏成功了」这件好事变成一次额外的操作，还会挡住卡片。这里的提示条
+    不抢焦点、不拦鼠标（`WA_TransparentForMouseEvents`），消失之前用户就能继续点别的。
+
+    提示条是对话框的**直接子控件**，不参与任何 layout —— 它要浮在滚动区上方，
+    进 layout 会被挤进底部按钮行。位置由 `reposition()` 按对话框尺寸算，
+    所以 `WordResultDialog.resizeEvent` 里要跟着调一次。
+    """
+
+    #: 停留时长：够读完一行 12.5px 中文，又不至于糊在界面上。
+    HOLD_MS = 1700
+    FADE_IN_MS = 150
+    FADE_OUT_MS = 240
+    #: 提示条底边到对话框底边的距离，让开底部按钮行（34px 按钮 + 18px 内边距）。
+    BOTTOM_GAP = 64
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setObjectName("toast")
+        # 提示条只是反馈，不该吃掉用户的下一次点击
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setStyleSheet(
+            "QFrame#toast{background:#F3F8F5;border:1px solid #CFE3D6;"
+            "border-radius:12px;}"
+            "QLabel{background:transparent;border:none;}"
+            "QLabel#toastText{color:%s;font-size:12.5px;font-weight:650;}" % INK)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(13, 8, 15, 8)
+        row.setSpacing(8)
+
+        icon = QLabel()
+        icon.setFixedSize(15, 15)
+        icon.setPixmap(_svg_icon(CHECK_SVG, 15).pixmap(15, 15))
+        row.addWidget(icon, 0, Qt.AlignVCenter)
+
+        self._text = QLabel("")
+        self._text.setObjectName("toastText")
+        self._text.setTextFormat(Qt.RichText)
+        row.addWidget(self._text, 0, Qt.AlignVCenter)
+
+        # 淡入淡出只能有一个 QGraphicsEffect，所以不做投影，改用浅底色 + 描边
+        # 和白色对话框拉开层次。底色写死是**有意的**：本文件的 `DIALOG_QSS`
+        # 就是浅色常量，对话框不跟随 `ui_theme` 的夜间预设；哪天对话框也做暗色，
+        # 这两处（#F3F8F5 / #CFE3D6）要一起换。
+        self._fade = QGraphicsOpacityEffect(self)
+        self._fade.setOpacity(0.0)
+        self.setGraphicsEffect(self._fade)
+
+        self._fade_in = QPropertyAnimation(self._fade, b"opacity", self)
+        self._fade_in.setDuration(self.FADE_IN_MS)
+        self._fade_in.setEasingCurve(QEasingCurve.OutCubic)
+        self._fade_in.setEndValue(1.0)
+
+        self._fade_out = QPropertyAnimation(self._fade, b"opacity", self)
+        self._fade_out.setDuration(self.FADE_OUT_MS)
+        self._fade_out.setEasingCurve(QEasingCurve.InCubic)
+        self._fade_out.setEndValue(0.0)
+        self._fade_out.finished.connect(self.hide)
+
+        self._hold = QTimer(self)
+        self._hold.setSingleShot(True)
+        self._hold.timeout.connect(self._dismiss)
+
+        self.hide()
+
+    def flash(self, text: str) -> None:
+        """显示一行提示。连点时只换文字、重置停留计时，不重播淡入（否则会闪一下）。"""
+        self._text.setText(text)
+        self.adjustSize()
+        self.reposition()
+        # 滚动区里的卡片是后加进来的兄弟控件，不抬一下会被压在下面
+        self.raise_()
+        self.show()
+
+        self._hold.stop()
+        self._fade_out.stop()
+        if self._fade.opacity() < 0.99:
+            self._fade_in.stop()
+            self._fade_in.setStartValue(self._fade.opacity())
+            self._fade_in.start()
+        self._hold.start(self.HOLD_MS)
+
+    def _dismiss(self) -> None:
+        self._fade_in.stop()
+        self._fade_out.setStartValue(self._fade.opacity())
+        self._fade_out.start()
+
+    def reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        self.resize(min(self.sizeHint().width(), max(160, parent.width() - 48)),
+                    self.sizeHint().height())
+        self.move((parent.width() - self.width()) // 2,
+                  parent.height() - self.BOTTOM_GAP - self.height())
+
+
 class WordResultDialog(QDialog):
     """框选识词结果：本地词典先把释义摆出来，AI 语境分析**点了才发**。
 
@@ -105,6 +223,9 @@ class WordResultDialog(QDialog):
         self.book = wordbook
         self._stars = {}
         self._aura = {}
+        #: 底部提示条（`_Toast`）。第一次要用时才建 —— 大多数会话根本不会点「全部收藏」，
+        #: 提前建一个隐藏控件等于白付一次布局与 effect 的钱。
+        self._toast = None
         #: lemma → 卡片上的 AI 控件集合
         self._ai_ui = {}
         #: 当前在途请求（整卡共享一个，天然限流）
@@ -404,8 +525,30 @@ class WordResultDialog(QDialog):
             button = self._stars.get(item["lemma"])
             if button:
                 _set_bookmark(button, True)
+        total = len(self.items)
         if added == 0:
-            QMessageBox.information(self, "单词本", "这些词已经都在单词本里了。")
+            self._show_toast("这些词已经都在单词本里了")
+        elif added < total:
+            # 全部收藏成功，但里面有几个本来就在本子里。如实说清「新增几个」，
+            # 否则用户会以为刚才那次点击什么都没干。
+            self._show_toast(_toast_html(
+                "已全部收藏成功",
+                "本次新增 %d 个，其余 %d 个原本已在单词本" % (added, total - added)))
+        else:
+            self._show_toast(_toast_html(
+                "已全部收藏成功", "%d 个单词已进单词本" % added))
+
+    def _show_toast(self, text: str) -> None:
+        """底部提示条的唯一入口；控件在这里按需创建。"""
+        if self._toast is None:
+            self._toast = _Toast(self)
+        self._toast.flash(text)
+
+    def resizeEvent(self, event) -> None:
+        """提示条是绝对定位的，对话框一改尺寸就得跟着重新摆。"""
+        super().resizeEvent(event)
+        if self._toast is not None:
+            self._toast.reposition()
 
 
 class WordbookDialog(QDialog):
