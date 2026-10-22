@@ -237,5 +237,113 @@ class ReviewFlowTests(unittest.TestCase):
             self.assertIn("暂无", card["meaning"])
 
 
+class CategoryFilterTests(unittest.TestCase):
+    """入口页「按分类复习」：keep 谓词只挑人，不碰调度。"""
+
+    def test_start_with_keep_only_queues_matching(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = _seed(tmp, 4)
+            keep = lambda i: i.word in {"w0", "w2"}
+            summary = ReviewSession(book).start(keep=keep)
+            self.assertEqual(summary["total"], 2)
+            s = ReviewSession(book)
+            s.start(keep=keep)
+            seen = {s.card()["word"]}
+            s.step(1)
+            seen.add(s.card()["word"])
+            self.assertEqual(seen, {"w0", "w2"})
+
+    def test_rebuild_keeps_the_filter(self):
+        """自评后重建队列，别的分类不许混进来（选四级练出六级 = 撒谎）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            book = _seed(tmp, 4)
+            s = ReviewSession(book)
+            s.start(keep=lambda i: i.word in {"w1", "w3"})
+            s.grade(True)                             # 写盘改 due_at → 顺序会变
+            s.rebuild()
+            self.assertEqual(len(s._queue), 2)
+            self.assertTrue(all(i.word in {"w1", "w3"} for i in s._queue))
+
+    def test_start_resets_stale_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = _seed(tmp, 4)
+            s = ReviewSession(book)
+            s.start(keep=lambda i: False)
+            self.assertEqual(s.start()["total"], 4, "重开不带 keep 必须回到全量")
+
+    def test_due_only_and_keep_compose(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = _seed(tmp, 3)
+            book.items[0].due_at = time.time() - 10   # 到期，但在分类外
+            book.items[1].due_at = time.time() - 10
+            book.items[2].due_at = time.time() + 5 * DAY
+            summary = ReviewSession(book).start(
+                include_upcoming=False, keep=lambda i: i.word != "w0")
+            self.assertEqual(summary["total"], 1)
+            s = ReviewSession(book)
+            s.start(include_upcoming=False, keep=lambda i: i.word != "w0")
+            self.assertEqual(s.card()["word"], "w1")
+
+    def test_overview_scopes_numbers_to_keep(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            book = _seed(tmp, 4)
+            book.items[0].due_at = time.time() - 1
+            book.items[1].due_at = time.time() - 1
+            book.items[2].due_at = time.time() + 3 * DAY
+            keep = lambda i: i.word in {"w1", "w2"}
+            scoped = due_overview(book, keep=keep)
+            whole = due_overview(book)
+            self.assertEqual(whole["total"], 4)       # 不传 keep 行为不变
+            self.assertEqual(scoped["total"], 2)
+            self.assertEqual(scoped["due"], 1)
+            self.assertTrue(scoped["nextDueLabel"])
+            empty = due_overview(book, keep=lambda i: False)
+            self.assertTrue(empty["empty"])
+            self.assertEqual(empty["due"], 0)
+
+
+class ReviewCategoryRowsTests(unittest.TestCase):
+    """bridge 侧纯函数：胶囊行 = 全部 + 五分类 + 未分类，口径同收藏夹。"""
+
+    class _Lex:
+        def __init__(self, mapping):
+            self._m = mapping
+
+        def tags_of(self, word):
+            return list(self._m.get(word, []))
+
+    def test_rows_shape_and_counts(self):
+        from launcher_qml import review_category_rows
+        with tempfile.TemporaryDirectory() as tmp:
+            book = Wordbook(os.path.join(tmp, "book.json"))
+            book.add({"word": "alpha", "tags": ["cet4", "cet6"]})
+            book.add({"word": "beta", "tags": ["industry"]})
+            book.add({"word": "gamma", "tags": []})    # 老词：回查词典
+            lex = self._Lex({"gamma": ["cet4"]})
+            rows = review_category_rows(book.items, lex)
+            self.assertEqual([r["id"] for r in rows],
+                             ["all", "cet4", "cet6", "ielts", "toefl",
+                              "industry", "other"])
+            by_id = {r["id"]: r for r in rows}
+            self.assertEqual(by_id["all"]["count"], 3)
+            self.assertEqual(by_id["cet4"]["count"], 2, "含词典兜底的 gamma")
+            self.assertEqual(by_id["ielts"]["count"], 0)
+            self.assertEqual(by_id["other"]["count"], 0,
+                             "三个词都命中了真分类，未分类应为 0")
+
+    def test_due_column(self):
+        from launcher_qml import review_category_rows
+        with tempfile.TemporaryDirectory() as tmp:
+            book = Wordbook(os.path.join(tmp, "book.json"))
+            book.add({"word": "alpha", "tags": ["cet4"]})
+            book.add({"word": "beta", "tags": ["cet4"]})
+            book.items[0].due_at = time.time() - 1
+            book.items[1].due_at = time.time() + 2 * DAY   # 新词默认到期，推走
+            rows = {r["id"]: r for r in
+                    review_category_rows(book.items, self._Lex({}))}
+            self.assertEqual(rows["cet4"]["due"], 1)
+            self.assertEqual(rows["cet4"]["count"], 2)
+
+
 if __name__ == '__main__':
     unittest.main()

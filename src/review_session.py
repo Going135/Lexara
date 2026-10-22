@@ -252,21 +252,39 @@ class ReviewSession:
         }
 
 
-def due_overview(book) -> dict:
+def due_overview(book, keep=None) -> dict:
     """复习入口页的真实统计（不给 UI 任何硬编码数字）。
 
     - ``total`` / ``due`` 来自 ``Wordbook.stats()``；
     - ``reviewedToday`` 数今天的复习事件（每条词只记一次）；
     - ``nextDueLabel`` 是下一个到期词还有多久（全都背完时为 ``""``）。
+
+    传 ``keep``（``item -> bool``）时所有数字**作用域收窄到该子集**
+    （入口页选了分类之后的统计）；不传时与旧行为逐字节一致。
     """
-    stats = book.stats()
+    now = time.time()
     today = today_key()
-    reviewed_today = len({e.get("word") for e in getattr(book, "review_events", [])
-                          if e.get("date") == today})
-    upcoming = [i.due_at for i in book.items if i.due_at > time.time()]
+    if keep is None:
+        stats = book.stats()
+        total = int(stats.get("total", 0))
+        due = int(stats.get("due", 0))
+        learned_today = int(stats.get("today", 0))
+        pool = list(book.items)
+        reviewed_today = len({e.get("word") for e in getattr(book, "review_events", [])
+                              if e.get("date") == today})
+    else:
+        pool = [i for i in book.items if keep(i)]
+        words = {i.word for i in pool}
+        total = len(pool)
+        due = sum(1 for i in pool if i.due_at <= now)
+        learned_today = len({e.get("word") for e in getattr(book, "study_events", [])
+                             if e.get("date") == today and e.get("word") in words})
+        reviewed_today = len({e.get("word") for e in getattr(book, "review_events", [])
+                              if e.get("date") == today and e.get("word") in words})
     next_label = ""
+    upcoming = [i.due_at for i in pool if i.due_at > now]
     if upcoming:
-        wait_days = (min(upcoming) - time.time()) / 86400.0
+        wait_days = (min(upcoming) - now) / 86400.0
         if wait_days < 1 / 24.0:
             next_label = "不到 1 小时后"
         elif wait_days < 1:
@@ -274,12 +292,12 @@ def due_overview(book) -> dict:
         else:
             next_label = "约 %d 天后" % max(1, int(round(wait_days)))
     return {
-        "total": int(stats.get("total", 0)),
-        "due": int(stats.get("due", 0)),
-        "learnedToday": int(stats.get("today", 0)),
-        "reviewedToday": int(reviewed_today),
+        "total": total,
+        "due": due,
+        "learnedToday": learned_today,
+        "reviewedToday": reviewed_today,
         "nextDueLabel": next_label,
-        "empty": int(stats.get("total", 0)) == 0,
+        "empty": total == 0,
     }
 
 

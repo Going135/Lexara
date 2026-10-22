@@ -32,6 +32,8 @@ __pycache__/
 run.log
 theme.json
 *.tmp
+# 调试截图 / APPDATA 备份 / 挑 hunk 用的临时 patch，纯本地工作目录
+.tmp-shot/
 
 # ---- 打包备份（原版 pyc / 旧图标，仅本地留存）----
 archive/

@@ -219,6 +219,30 @@ def favorite_rows(items, lexicon, cache: dict | None = None) -> list:
     return rows
 
 
+def review_category_rows(items, lexicon) -> list:
+    """复习入口页的分类胶囊行：一行 = {id, label, count, due}。
+
+    口径和侧栏收藏夹、导出分节**同一份** `tags_of`（老词回查词典兜底，
+    一词可属多分类）；首行「全部」是虚拟档。`due` = 该分类里今天到期的词数。
+    """
+    now = time.time()
+    items = list(items or [])
+    keys = {key for key, _label in FAVORITE_CATEGORIES}
+
+    def _due(bucket):
+        return sum(1 for i in bucket if i.due_at <= now)
+
+    rows = [{"id": "all", "label": "全部", "count": len(items), "due": _due(items)}]
+    for key, label in FAVORITE_CATEGORIES:
+        bucket = [i for i in items if key in tags_of(lexicon, i)]
+        rows.append({"id": key, "label": label, "count": len(bucket),
+                     "due": _due(bucket)})
+    other = [i for i in items if not (tags_of(lexicon, i) & keys)]
+    rows.append({"id": OTHER_CATEGORY[0], "label": OTHER_CATEGORY[1],
+                 "count": len(other), "due": _due(other)})
+    return rows
+
+
 FONT = "Microsoft YaHei UI"
 
 def _base_dir() -> str:
@@ -539,6 +563,9 @@ class LauncherBridge(QObject):
         self._review = ReviewSession(book, limit=DEFAULT_SESSION_LIMIT)
         #: ``home`` → 复习入口页；``card`` → 卡片；``done`` → 完成页
         self._review_stage = "home"
+        #: 入口页选中的复习分类；``all`` = 全部。只影响进队列的词，
+        #: 1/3/7/14 调度不认它（调度唯一来源仍是 `Wordbook.grade()`）。
+        self._review_category = "all"
 
         # ---- AI：配置 + 对话
         # ``secrets`` 可注入：自动化测试用一个临时目录，避免碰到用户真实密钥。
@@ -673,7 +700,9 @@ class LauncherBridge(QObject):
 
     # ---- 背单词（只读 QML 用；所有写操作走 Slot → ReviewSession → Wordbook）
     reviewOverview = Property(
-        dict, lambda self: due_overview(self._book), notify=changed)
+        dict, lambda self: self._review_overview(), notify=changed)
+    reviewCategory = Property(str, lambda self: self._review_category,
+                              notify=changed)
     reviewCard = Property(dict, lambda self: self._review.card(), notify=changed)
     reviewSummary = Property(dict, lambda self: self._review.summary(),
                              notify=changed)
@@ -1128,6 +1157,38 @@ class LauncherBridge(QObject):
             self._log("[theme] 跟随系统失败: %r" % (error,))
 
     # ------------------------------------------------ 背单词
+    def _review_keep(self, category: str):
+        """分类 → `ReviewSession` 用的过滤器谓词；``all`` 返回 None（零过滤）。"""
+        if category == "all":
+            return None
+        keys = {key for key, _label in FAVORITE_CATEGORIES}
+        lexicon = self._lexicon
+        if category == OTHER_CATEGORY[0]:
+            return lambda item: not (tags_of(lexicon, item) & keys)
+        return lambda item: category in tags_of(lexicon, item)
+
+    def _review_overview(self) -> dict:
+        """入口页统计：选了分类后所有数字收窄到该分类，并附胶囊行数据。"""
+        overview = due_overview(self._book,
+                                keep=self._review_keep(self._review_category))
+        labels = {"all": "全部"}
+        labels.update({key: label for key, label in FAVORITE_CATEGORIES})
+        labels[OTHER_CATEGORY[0]] = OTHER_CATEGORY[1]
+        return dict(overview,
+                    categories=review_category_rows(self._book.items,
+                                                     self._lexicon),
+                    category=self._review_category,
+                    categoryLabel=labels.get(self._review_category, "全部"))
+
+    @Slot(str)
+    def setReviewCategory(self, category: str) -> None:
+        """入口页点胶囊：只换过滤器，不动正在跑的这轮队列。"""
+        valid = {"all", OTHER_CATEGORY[0]} | {k for k, _ in FAVORITE_CATEGORIES}
+        if category not in valid or category == self._review_category:
+            return
+        self._review_category = category
+        self.changed.emit()
+
     @Slot()
     def openReview(self) -> None:
         """打开复习面板并刷新入口页统计（数据全部来自真实词库）。"""
@@ -1136,7 +1197,9 @@ class LauncherBridge(QObject):
 
     @Slot(bool)
     def startReviewSession(self, due_only: bool = False) -> None:
-        summary = self._review.start(include_upcoming=not bool(due_only))
+        summary = self._review.start(include_upcoming=not bool(due_only),
+                                     keep=self._review_keep(
+                                         self._review_category))
         self._review_stage = "card" if summary["total"] else "home"
         self._study_help.reset()          # 新一局：上一张的 AI 结果不能跟过来
         self._reset_spell()

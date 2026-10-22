@@ -641,3 +641,17 @@ add -A 卷走），收尾在 `e9d1f8d`
 - 留痕：我的 bridge slot / 旧版入口被 WorkBuddy `f204442` 的 `git add -A`
   扫进他名下（内容没问题，不动）；他 Main.qml 未提交的默写 hunk 我这次
   **没有**带走，原样留工作区归他提交。详见 `20261022-155944` 消息。
+
+## 2026-10-22 16:18 · 背单词按分类复习
+
+- 用户指令：「无分类全部复习 → 可选四级/六级…」。入口页加七颗胶囊
+  （全部+五分类+未分类），选中后统计与下一轮队列只算该分类。
+- `review_session.py`：`start(keep=None)`/`rebuild`/`due_overview(book, keep)`
+  加可选谓词，不传零变化；调度唯一来源仍是 `Wordbook.grade()`。
+- `launcher_qml.py`：`review_category_rows` 纯函数（口径同收藏夹/导出）、
+  `reviewCategory` 属性 + `setReviewCategory` 槽、`reviewOverview` 只加键。
+- 验证：test_review_session 22/22（新 7 条）+ favorites 10 + export 19；
+  真窗口截图胶囊行数字真实。
+- 顺手：WorkBuddy `add -A` 把 `.tmp-shot/`（含用户配置/词库备份）扫进了
+  git —— 已 `rm --cached` + `.gitignore`，历史要不要 filter-repo 由他拍板
+  （见 `20261022-161803` 消息）。

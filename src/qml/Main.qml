@@ -2537,6 +2537,23 @@ ApplicationWindow {
                             }
                         }
 
+                        // 分类胶囊：「全部」是虚拟档，其余六行和侧栏收藏夹同一
+                        // 口径（bridge.reviewOverview.categories）。选中只影响
+                        // 入口页统计作用域和下一轮的复习队列，不动调度算法。
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Repeater {
+                                model: bridge.reviewOverview.categories
+                                delegate: PillButton {
+                                    required property var modelData
+                                    text: modelData.label + " · " + modelData.count
+                                    checked: bridge.reviewCategory === modelData.id
+                                    onClicked: bridge.setReviewCategory(modelData.id)
+                                }
+                            }
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -2552,8 +2569,12 @@ ApplicationWindow {
                                     horizontalAlignment: Text.AlignHCenter
                                     wrapMode: Text.Wrap
                                     text: bridge.reviewOverview.empty
-                                          ? "单词本还是空的。先用蜘蛛头框选屏幕上的英文，"
-                                            + "把想背的词收进单词本，再回来开始复习。"
+                                          ? (bridge.reviewCategory !== "all"
+                                             ? "「" + bridge.reviewOverview.categoryLabel
+                                               + "」里还没有收进过单词。换个分类，"
+                                               + "或先用蜘蛛头框选屏幕上的英文收几个词。"
+                                             : "单词本还是空的。先用蜘蛛头框选屏幕上的英文，"
+                                               + "把想背的词收进单词本，再回来开始复习。")
                                           : (bridge.reviewOverview.due > 0
                                              ? "有 " + bridge.reviewOverview.due
                                                + " 个词今天该复习了。看到英文先自己想中文，"
