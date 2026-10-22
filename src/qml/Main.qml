@@ -141,6 +141,7 @@ ApplicationWindow {
         if (name === "skins") return skinsPanel
         if (name === "settings") return settingsPanel
         if (name === "api") return apiPanel
+        if (name === "export") return exportPanel
         if (name === "chat") return chatPanel
         if (name === "review") return reviewPanel
         if (name === "help") return helpPanel
@@ -684,6 +685,26 @@ ApplicationWindow {
                                                        favRow.modelData.id)
                                     }
                                 }
+                            }
+
+                            // 导出入口：跟着收藏夹展开出现（导的就是这批词），
+                            // 不抢首屏空间。真正的格式选择在对齐的导出面板里。
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 4
+                                Label {
+                                    text: "🗂 导出单词本…"
+                                    font.pixelSize: 12
+                                    color: root.accent
+                                }
+                                Item { Layout.fillWidth: true }
+                            }
+                            MouseArea {
+                                Layout.fillWidth: true
+                                implicitHeight: 4
+                                anchors.topMargin: -20
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.overlay = "export"
                             }
                         }
                     }
@@ -2448,6 +2469,11 @@ ApplicationWindow {
                                 anchors.fill: parent
                                 anchors.margins: 18
                                 clip: true
+                                //: 默写弹窗打开时**整块卡片内容直接不画**。
+                                //: 只靠半透明遮罩不够：音标（phonetic）几乎等于答案，
+                                //: 30px 的白字在 70% 黑底下还能看出轮廓。隐藏掉最干净，
+                                //: 而且遮罩本身还在，层次不会塌。
+                                visible: bridge.reviewSpell.open !== true
                                 contentWidth: width
                                 contentHeight: Math.max(height, cardCol.implicitHeight)
                                 boundsBehavior: Flickable.StopAtBounds
@@ -2544,6 +2570,12 @@ ApplicationWindow {
                                                   ? "同义词中…" : "同义词"
                                             enabled: !reviewPanel.helpLoading
                                             onClicked: bridge.reviewHelpRequest("synonym")
+                                        }
+                                        //: 默写是**本地判分**，不走 AI、不需要配置模型，
+                                        //: 所以它不看 `helpLoading` / `aiReady`。
+                                        MiniButton {
+                                            text: "默写"
+                                            onClicked: bridge.reviewSpellOpen()
                                         }
                                         Label {
                                             visible: !bridge.aiReady
@@ -2772,6 +2804,185 @@ ApplicationWindow {
                                 text: "回到首页"
                                 primary: true
                                 onClicked: bridge.reviewExit()
+                            }
+                        }
+                    }
+                }
+
+                // ------------------------------------------------ 默写弹窗
+                //: 覆盖整块面板（含底部按钮行），遮罩吃掉所有点击 —— 默写期间
+                //: 底下没有任何东西能点，避免「一半在默写、一半在翻卡」。
+                //:
+                //: **单词不能露**：卡片内容已经由 `cardScroll.visible` 整块隐藏，
+                //: 这里再压一层遮罩，是为了不让下面的按钮行和面板底色显得像故障。
+                //: 判分在 Python（`spell_check.check`），这里只显示结果。
+                Rectangle {
+                    id: spellOverlay
+                    anchors.fill: parent
+                    z: 300
+                    visible: bridge.reviewSpell.open === true
+                    //: 带一点蓝的深色，而不是纯黑：夜间主题下纯黑遮罩会把
+                    //: 雾白文字的余像衬得很脏。
+                    color: "#D90B1520"
+                    focus: visible
+
+                    Keys.onEscapePressed: bridge.reviewSpellClose()
+                    onVisibleChanged: {
+                        if (visible) {
+                            spellInput.text = ""
+                            spellInput.forceActiveFocus()
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.AllButtons
+                        onWheel: function(wheel) { wheel.accepted = true }
+                    }
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: Math.min(420, spellOverlay.width - 64)
+                        height: spellCol.implicitHeight + 44
+                        radius: 14
+                        color: root.panel
+                        border.width: 1
+                        border.color: root.line
+
+                        ColumnLayout {
+                            id: spellCol
+                            anchors.fill: parent
+                            anchors.margins: 22
+                            spacing: 8
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Label {
+                                    text: "默写单词"
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                    color: root.ink
+                                }
+                                Item { Layout.fillWidth: true }
+                                Item {
+                                    width: spellQuit.implicitWidth + 12
+                                    height: 20
+                                    Label {
+                                        id: spellQuit
+                                        anchors.centerIn: parent
+                                        text: "退出"
+                                        font.pixelSize: 11
+                                        color: root.muted
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: bridge.reviewSpellClose()
+                                    }
+                                }
+                            }
+
+                            //: **只显示中文**。音标、词性、档位一律不给 —— 音标基本
+                            //: 等于答案（`/əˈkædəmi/` 摆在那儿就不用默写了）。
+                            Label {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 10
+                                text: bridge.reviewCard.meaning || ""
+                                font.pixelSize: 19
+                                font.bold: true
+                                color: root.ink
+                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: "按上面的中文写出英文单词"
+                                font.pixelSize: 11
+                                color: root.muted
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+
+                            TextField {
+                                id: spellInput
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                placeholderText: "在这里输入…"
+                                font.pixelSize: 18
+                                horizontalAlignment: TextInput.AlignHCenter
+                                //: 文字/光标颜色必须显式给：默认是系统前景色，
+                                //: 夜间主题下会是黑字配深底（等于看不见）。
+                                color: root.ink
+                                placeholderTextColor: root.muted
+                                selectionColor: root.accent
+                                selectedTextColor: root.primaryFg
+                                leftPadding: 12
+                                rightPadding: 12
+                                topPadding: 8
+                                bottomPadding: 8
+                                //: 判对之后锁输入：再改也没意义，还会让人以为能重判
+                                readOnly: bridge.reviewSpell.verdict === "correct"
+                                onAccepted: bridge.reviewSpellSubmit(text)
+                                background: Rectangle {
+                                    radius: 9
+                                    color: root.card
+                                    border.width: 1
+                                    border.color: bridge.reviewSpell.verdict === "wrong"
+                                                  ? root.dangerColor : root.line
+                                }
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 2
+                                visible: (bridge.reviewSpell.verdict || "") !== ""
+                                text: {
+                                    var s = bridge.reviewSpell
+                                    if (s.verdict === "empty")
+                                        return "还没输入。"
+                                    if (s.verdict === "correct")
+                                        return "✓ 拼写正确"
+                                    return "✗ 正确拼写：" + (s.answer || "")
+                                }
+                                font.pixelSize: 14
+                                font.bold: bridge.reviewSpell.verdict === "correct"
+                                color: bridge.reviewSpell.verdict === "correct"
+                                       ? root.success
+                                       : bridge.reviewSpell.verdict === "empty"
+                                         ? root.muted : root.dangerColor
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                visible: (bridge.reviewSpell.hint || "") !== ""
+                                text: bridge.reviewSpell.hint || ""
+                                font.pixelSize: 11
+                                color: root.muted
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: 8
+                                spacing: 8
+                                Item { Layout.fillWidth: true }
+                                //: 判错不换按钮：输入框还开着，改完直接再点一次。
+                                //: 「再写一次」那种按钮只是把同一件事多做一步。
+                                MiniButton {
+                                    visible: bridge.reviewSpell.verdict !== "correct"
+                                    text: "完成默写"
+                                    primary: true
+                                    enabled: (spellInput.text || "").trim() !== ""
+                                    onClicked: bridge.reviewSpellSubmit(spellInput.text)
+                                }
+                                MiniButton {
+                                    visible: bridge.reviewSpell.verdict === "correct"
+                                    text: "完成"
+                                    primary: true
+                                    onClicked: bridge.reviewSpellClose()
+                                }
+                                Item { Layout.fillWidth: true }
                             }
                         }
                     }

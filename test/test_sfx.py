@@ -126,6 +126,9 @@ class ReviewGradeSoundCase(unittest.TestCase):
         stub = mock.Mock(spec=LauncherBridge)
         stub._review = _Review()
         stub._review_stage = "card"
+        # 2026-10-22：自评后还要作废在途的「造句 / 同义词」请求（卡片换人了）。
+        # `_study_help` 是实例属性，`spec=LauncherBridge` 不会自动造出来。
+        stub._study_help = mock.Mock()
         stub.changed = _Changed()
         return LauncherBridge, stub
 

@@ -128,6 +128,9 @@ def _cases(bridge, settings, book, check) -> None:
     # 没揭示答案之前一律不接：跳过「先自己回忆」会让卡片退化成例句书。
     bridge.reviewHelpRequest("sentence")
     check("help.gatedByReveal", bridge.reviewHelp["state"], "idle")
+    # 默写同理：没看到中文释义就让人默写，等于凭空猜。
+    bridge.reviewSpellOpen()
+    check("spell.gatedByReveal", bridge.reviewSpell["open"], False)
 
     bridge.reviewReveal()
     check("review.card.revealed", bridge.reviewCard["revealed"], True)
@@ -140,12 +143,30 @@ def _cases(bridge, settings, book, check) -> None:
     bridge.reviewHelpClose()
     check("help.idleAfterClose", bridge.reviewHelp["state"], "idle")
 
+    # ---- 默写单词（本地判分，一次网络都不发）
+    probe_word = bridge.reviewCard["word"]
+    bridge.reviewSpellOpen()
+    check("spell.opens", bridge.reviewSpell["open"], True)
+    check("spell.answerIsCardWord", bridge.reviewSpell["answer"], probe_word)
+    bridge.reviewSpellSubmit("zzz-not-the-word")
+    check("spell.wrong", bridge.reviewSpell["verdict"], "wrong")
+    bridge.reviewSpellSubmit("   ")
+    check("spell.empty", bridge.reviewSpell["verdict"], "empty")
+    # 大小写不该判错 —— 判错等于告诉用户「你拼错了」，而他没有
+    bridge.reviewSpellSubmit(probe_word.upper())
+    check("spell.correct", bridge.reviewSpell["verdict"], "correct")
+    bridge.reviewSpellClose()
+    check("spell.closed", bridge.reviewSpell["open"], False)
+
     word = bridge.reviewCard["word"]
     # 注意：`book.get()` 返回的是**活的 Item 对象**，直接持有它会在评分后被就地
     # 改写（同一个对象），断言就失去意义。这里先把标量快照下来。
     snapshot = book.get(word)
     before_stage, before_correct = snapshot.stage, snapshot.correct
+    # 弹窗开着就自评：换卡必须顺手把默写框收掉，否则下一张卡挂着上一张的答案
+    bridge.reviewSpellOpen()
     bridge.reviewGrade(True)
+    check("spell.resetOnGrade", bridge.reviewSpell["open"], False)
     after = book.get(word)
     check("review.grade.writes", after.stage, min(before_stage + 1, 3))
     check("review.grade.counts", after.correct, before_correct + 1)

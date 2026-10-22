@@ -50,6 +50,9 @@ from ai.config import AIConfig, SecretStore
 from ai.study_help import StudyHelpService
 from help_content import STEPS, STATE_LABELS
 import ocr_registry
+#: 默写判分是**纯函数**，不碰 Qt。放在这里是为了让「对/错」的真相只有一份
+#: （`spell_check.check`），QML 只负责显示。
+import spell_check
 
 # ------------------------------------------------ 调色（与参考截图一致的浅色系）
 INK = "#1F1F1F"
@@ -554,6 +557,10 @@ class LauncherBridge(QObject):
         #: 对话页，也不该受对话上下文影响（同一张卡片两次点击要给同样的东西）。
         self._study_help = StudyHelpService(self._ai_config, self)
         self._study_help.changed.connect(self._on_chat_changed)
+        #: 默写弹窗的状态。**只在这里存**，QML 不自己判对错：输入框里的字
+        #: 是 QML 的本地状态（要支持光标 / 输入法），判定结果来自
+        #: `spell_check.check()`，两者靠 `reviewSpellSubmit()` 连起来。
+        self._spell: dict = spell_check.empty_state()
         self._last_test: dict = {}
         #: 学习日历 / 成就的缓存键（事件条数 + 今天），避免 250ms 轮询里重算 371 格
         self._activity_key = None
@@ -680,6 +687,10 @@ class LauncherBridge(QObject):
     #: 的说明 —— 比一个灰按钮更能让用户知道这功能存在（`aiReady` 同理）。
     reviewHelpReady = Property(bool, lambda self: self._ai_config.configured(),
                                notify=changed)
+    #: 默写弹窗。字段：`open`、`verdict` idle|empty|correct|wrong、
+    #: `answer`（规范拼写，错时显示）、`typed`、`hint`、`attempts`。
+    #: **和 AI 无关**：默写是复习动作，不花 token，也不需要配置模型。
+    reviewSpell = Property(dict, lambda self: self._spell, notify=changed)
 
     # ---- AI 对话 / 配置
     aiReady = Property(bool, lambda self: self._ai_config.configured(),
@@ -822,6 +833,42 @@ class LauncherBridge(QObject):
         self.changed.emit()
         QTimer.singleShot(6000, self, self._clear_notice)
         return result
+
+    # ------------------------------------------------ 单词本导出（2026-10-22）
+    @Slot(str, bool, result=dict)
+    def exportWordbook(self, fmt: str, study: bool) -> dict:
+        """收藏夹「导出单词本…」→ 系统保存对话框 → 落盘。
+
+        文件名和位置都由用户在对话框里定（默认名带日期，不打后缀时
+        `word_export` 会补格式后缀）。取消返回 `cancelled`，不弹任何提示；
+        成功/失败走 `notice` 条，和导出日历同一条路子。
+        """
+        import word_export
+        if fmt not in word_export.FORMATS:
+            return {"ok": False, "message": "未知导出格式 %s" % fmt}
+        items = list(self._book.items or [])
+        path = self._ask_word_export_path(fmt)
+        if not path:
+            return {"ok": False, "cancelled": True, "message": "已取消"}
+        result = word_export.export(items, fmt, path, lexicon=self._lexicon,
+                                    study=bool(study))
+        self._notice = result.get("message", "")
+        self.changed.emit()
+        QTimer.singleShot(6000, self, self._clear_notice)
+        return result
+
+    def _ask_word_export_path(self, fmt: str) -> str:
+        from PySide6.QtWidgets import QFileDialog
+        import word_export
+        labels = {"txt": "文本文件 (*.txt)", "csv": "表格文件 (*.csv)",
+                  "json": "JSON 备份 (*.json)"}
+        default = os.path.join(
+            QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            or os.path.expanduser("~"),
+            word_export.default_name(fmt))
+        path, _filter = QFileDialog.getSaveFileName(
+            None, "导出单词本", default, labels[fmt] + ";;所有文件 (*)")
+        return path or ""
 
     def _ask_calendar_path(self, payload: dict) -> str:
         """系统保存对话框，默认 PNG + 日期文件名。"""
@@ -1092,6 +1139,7 @@ class LauncherBridge(QObject):
         summary = self._review.start(include_upcoming=not bool(due_only))
         self._review_stage = "card" if summary["total"] else "home"
         self._study_help.reset()          # 新一局：上一张的 AI 结果不能跟过来
+        self._reset_spell()
         self.changed.emit()
 
     @Slot()
@@ -1111,12 +1159,14 @@ class LauncherBridge(QObject):
             self._review_stage = "done"
         # 卡片已经换人：在途的造句请求作废，避免「上一张的例句」盖到下一张。
         self._study_help.reset()
+        self._reset_spell()
         self.changed.emit()
 
     @Slot(int)
     def reviewStep(self, delta: int) -> None:
         self._review.step(int(delta))
         self._study_help.reset()
+        self._reset_spell()
         self.changed.emit()
 
     @Slot()
@@ -1124,6 +1174,7 @@ class LauncherBridge(QObject):
         summary = self._review.start_wrong_only()
         self._review_stage = "card" if summary["total"] else "done"
         self._study_help.reset()
+        self._reset_spell()
         self.changed.emit()
 
     @Slot()
@@ -1132,6 +1183,7 @@ class LauncherBridge(QObject):
         self._review.exit_session()
         self._review_stage = "home"
         self._study_help.reset()
+        self._reset_spell()
         self.changed.emit()
 
     # ---- AI 辅助（造句 / 同义词）
@@ -1153,6 +1205,54 @@ class LauncherBridge(QObject):
         """收起辅助结果（**保留缓存**：再点同一个词是秒回）。"""
         self._study_help.reset()
         self.changed.emit()
+
+    # ---- 默写单词（看中文写英文）
+    @Slot()
+    def reviewSpellOpen(self) -> None:
+        """打开默写弹窗。**只允许在答案揭示之后** —— 和造句 / 同义词同一条理由：
+        没看释义就默写，等于让人凭空猜，还会把「先回忆再看答案」这一步跳掉。
+
+        卡片没揭示时直接 return，界面什么都不会发生（按钮本来也不显示，
+        这条是防自动化 / 快捷键路径绕过去）。
+        """
+        card = self._review.card()
+        word = (card.get("word") or "").strip()
+        if not card.get("revealed") or not word:
+            return
+        self._spell = spell_check.empty_state(open=True, answer=word)
+        self.changed.emit()
+
+    @Slot(str)
+    def reviewSpellSubmit(self, typed: str) -> None:
+        """点了「完成默写」。判分只走 `spell_check.check()`，这里不加业务。"""
+        if not self._spell.get("open"):
+            return
+        card = self._review.card()
+        word = (card.get("word") or "").strip()
+        if not word:
+            # 卡片被换掉了（理论上 `reviewSpell` 已经 reset，兜底一次）。
+            self._spell = spell_check.empty_state()
+            self.changed.emit()
+            return
+        result = spell_check.check(typed, word)
+        attempts = int(self._spell.get("attempts") or 0) + 1
+        self._spell = {**result, "open": True, "attempts": attempts}
+        # 第一次就写对才有庆祝音：改错第三次才蒙对，不该跟一次写对一个音效。
+        if result["verdict"] == "correct" and attempts == 1:
+            sfx.play_ding()
+        self.changed.emit()
+
+    @Slot()
+    def reviewSpellClose(self) -> None:
+        """关掉弹窗。判分结果不写词库、不影响调度 —— 默写是自测，不是评分。"""
+        if not self._spell.get("open") and not self._spell.get("verdict"):
+            return
+        self._spell = spell_check.empty_state()
+        self.changed.emit()
+
+    def _reset_spell(self) -> None:
+        """卡片换人 / 退出复习时把弹窗收掉。不 emit —— 调用方本来就要 emit。"""
+        self._spell = spell_check.empty_state()
 
     # ---- 信号转发（ChatService 在后台线程发回来）
     def _on_chat_changed(self, *_args) -> None:
