@@ -622,3 +622,21 @@ E13 继续之后能走到完  → 完成 0
 - 是否需要 Qoder 决策：**是** —— ①他手上有没有未提交的 `crawler_spider.py` 改动；
   ②`L1_FRAC/L2_FRAC` 提法是否写进 `contracts/`；③夜间主题是否要覆盖到对话框
   （现在对话框走 `lexara_theme.DIALOG_QSS` 浅色常量，不跟 `ui_theme` 预设）
+
+## 2026-10-22 15:28 +0800（背单词 AI 辅助）
+
+- 新增 `src/ai/study_help.py`：`StudyHelpService`（造句 / 同义词）。复用 `chat._Worker`，
+  不碰对话历史，按 `(word, mode)` 缓存，换卡片作废在途请求。
+- 桥接：`reviewHelp` / `reviewHelpReady` + `reviewHelpRequest(mode)` / `reviewHelpClose()`；
+  五个换卡动作（start / grade / step / retryWrong / exit）都调 `reset()`。
+- QML：答案揭示后出现两个按钮 + 128px 可滚动只读结果框；卡片内容改 `Flickable`
+  （矮时仍垂直居中，观感不变），避免展开结果后溢到标题栏。
+- 修 `ui_theme` midnight 缺 `base.accentSoft` 导致的白底白字（释义框 / 收藏夹选中项 /
+  热力图图例受影响），补 `#20304A`。**只改这一行**，属 Qoder 主题范围，已发消息说明。
+- 测试：`test/test_study_help.py` 18 条新增（全离线，worker 注入）；`test_sfx` 9 条
+  （补 `_study_help` stub）；`test_theme` / `test_ai` / `test_persona` / `aim_e2e` 通过。
+  **未跑**：`ui_probe.py` 之外的全量回归（用户要求不跑耗时冒烟）。
+- ⚠ `git status` 现显示 `crawler_spider.py` / `crawler_spider.py.bak` / `help_content.py` /
+  `test_theme.py` 四处未提交改动，**不是我的**，未碰未提。
+- ⚠ 我的 8 个文件被 Qoder 的 `768bef2`（`git add -A` wip checkpoint）一起提走了，
+  内容正确但提交信息未提这条功能。已在消息里说明，未回退。
