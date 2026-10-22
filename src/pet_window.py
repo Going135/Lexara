@@ -528,8 +528,9 @@ class PetWindow(QWidget):
         if not self._global_scan_hotkey.registered:
             _log("[hotkey] 全局 Ctrl+Shift+S 注册失败，保留应用内快捷键")
 
-        # 识词
-        self.capture_mode = "cet6"
+        # 识词。考纲默认值只有 `settings_store.DEFAULTS` 一处来源（四级）；
+        # 这里写死字面量会和启动台分叉 —— 没启动台时桌宠自己开出来是另一档。
+        self.capture_mode = str(SETTINGS_DEFAULTS["selected_mode"])
         # 「一次最多处理多少个词」。2026-10-18 之前这里是 8，等于把腿的条数
         # 当成词数上限（第 9 个之后静默丢掉）。现在八条腿只是**并行度**，
         # 队列会分批往前踩，所以兜底初值跟启动台默认值走。

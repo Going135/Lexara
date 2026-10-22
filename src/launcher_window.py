@@ -1598,7 +1598,7 @@ class Panel(QWidget):
         for key, row in self._mode_rows.items():
             if row.isChecked():
                 return key
-        return "cet6"
+        return str(DEFAULTS["selected_mode"])
 
     def _mode_clicked(self, button) -> None:
         self.mode_selected(button.key)

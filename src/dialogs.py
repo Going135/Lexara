@@ -833,7 +833,8 @@ class ModeDialog(QDialog):
         for key in lexicon.MODE_ORDER:
             self.combo.addItem(lexicon.MODE_DISPLAY[key], key)
         index = self.combo.findData(mode)
-        self.combo.setCurrentIndex(index if index >= 0 else 1)
+        # 兜底落到四级（`MODE_ORDER[0]`）：脏配置/未知档位不该把用户悄悄带到六级。
+        self.combo.setCurrentIndex(index if index >= 0 else 0)
         row.addWidget(self.combo, 1)
         layout.addLayout(row)
 
