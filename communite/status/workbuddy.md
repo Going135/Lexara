@@ -579,3 +579,46 @@ E13 继续之后能走到完  → 完成 0
   `pet_scale.signal` 三条断言 —— 以前的探针只验 settings 和罐内渲染器，
   正好把这两条链路漏掉，所以这个 bug 一直绿着。
 - `qml_smoke` PASS、`ui_probe` PASS（0 警告）、`deploy_cycle_probe --cycles 3` PASS。
+
+## 2026-10-22 15:04 +0800（授权驱动的参数重调 + 结果卡提示条）
+
+- 阶段：用户要「拉开与上游 web-crawlers 的相似度」（MIT 授权未到），
+  以及 UI 改进。**没有新任务书，按用户口述做。**
+- ⚠ **本轮的越界声明**：我改了 `src/crawler_spider.py` + `src/spider_painter.py`
+  （README 职责表里「八腿路径 / 蜘蛛」归 Qoder）。已在
+  `messages/20261022-150445_workbuddy_to_qoder_spider-params-and-toast.md`
+  逐项交代，并问他手上有没有未提交改动。**只改数值，功能契约未动。**
+- 提交（本轮 4 个）：
+  - `16f22d8` 几何/步态参数：`LEG_DEF` 静止角改非等距 0.62/1.26/2.12/2.68、
+    中段 reach 108/104、分骨比 0.54:0.66（提成 `L1_FRAC/L2_FRAC`，两处共用）、
+    STEP .34 / URGENT .55、迈步时长 .09~.15、前瞻 .26/.27、VELOCITY_DAMP 6、
+    ABD/SPIN 10/11、HIP_SIDE 3.2、线宽 1.42、点径指数 .52
+  - `94d3fb3` 原皮配色同色系微调（ΔE 1.4~4.1）：leg/leg_hi/joint/body/body_fill
+  - `d1c1e8f` `THIRD_PARTY_NOTICES.md`：音效=第三方免费素材（不适用 MIT）、
+    `assets/ui/*` + `assets/skins/*` + 破罐序列帧=自制
+  - `061eb38` `src/dialogs.py`：识词结果卡「全部收藏」底部提示条 `_Toast`
+- 保持不动的三处（有连锁依赖）：`OVER_FRAC 0.92`（与 `assign_reachable()`
+  的 `max_frac` 同口径）、`PLACE_FRAC 0.85`（IDLE_POSE 前足伸展 0.84×full，
+  只剩 0.01 余量）、`REST_K 0.80`（窗口尺寸基准）
+- 测试：`test_spider` **61/0**（原 59/0，我补了两条不变量并改断言引用常量）；
+  `test_ai` 17 / `test_favorites` 10 / `test_review_session` 15 / `test_sfx` 9 /
+  `aim_e2e` 19 全绿；`test_click_through` 44/45 → **45/45**（腿位置变了，测试点
+  不再落在腿上）
+- 改动**前**就红的（已逐条比过基线，非本轮引入）：`test_leg_fold_assignment` 2 条、
+  `test_skin` 1 条（头素材尺寸 170×160 / 200×188，契约 160×170）、
+  `locomotion_sheet` 质心 8 条
+- 视觉验证：`tools/locomotion_sheet.py` 新旧对照出图目视过。**踩过一次坑**：
+  分骨比第一版 0.50/0.70 测试全绿但出图腿交叉成 X 形线团，回退到 0.54/0.66 才对
+  —— **参数改动必须出图，不能只看断言**
+- 未解决问题：
+  - `_neighbour_stepping()` 仍没排除 palp（上游 `!o.palp && !L.palp`）——
+    行为层，归 Qoder，我只通报未改
+  - `COLORS["web_line"]` 死代码；`WALK_SPEED=165` 注释过时（实际 240）
+  - `assets/ui/spider_cracked.png` 已不在磁盘，`tools/make_crack_stages.py`
+    现在跑会 `FileNotFoundError`
+  - 工作区还有 7 个未提交的 `ui_theme` / 夜间主题相关改动（`ui_theme.py`、
+    `launcher_qml.py`、`Main.qml`、`help_content.py`、`settings_store.py`、
+    `test_theme.py`、`tools/theme_tool.py`），**不是我改的**，我没碰也没提交
+- 是否需要 Qoder 决策：**是** —— ①他手上有没有未提交的 `crawler_spider.py` 改动；
+  ②`L1_FRAC/L2_FRAC` 提法是否写进 `contracts/`；③夜间主题是否要覆盖到对话框
+  （现在对话框走 `lexara_theme.DIALOG_QSS` 浅色常量，不跟 `ui_theme` 预设）
