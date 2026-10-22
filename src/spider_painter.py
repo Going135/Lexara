@@ -42,7 +42,7 @@ def qcolor(hex_str: str, alpha: float = 1.0) -> QColor:
     return c
 
 
-#: hex → 基准 QColor 的解析缓存（每条腿每一帧都在 `QColor("#5cc8ff")`，
+#: hex → 基准 QColor 的解析缓存（每条腿每一帧都在 `QColor("#5cc1fc")`，
 #: 字符串解析是最便宜也最白给的一档开销 —— 一帧 10 条腿 × 多图层能解析上百次）。
 _COLOR_CACHE: dict = {}
 
