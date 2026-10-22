@@ -363,8 +363,11 @@ class SpiderPainter:
             pass
 
         dim = max(0.2, min(1.0, state.dim))
-        lw = 1.25 * math.sqrt(CS.BASE_SCALE) * unit
-        dr = (CS.BASE_SCALE ** 0.6) * unit
+        # ★ 2026-10-22：上游是 `1.25*sqrt(SCALE)` 与 `SCALE**.6`，这里改成
+        #   1.42 / **.52 —— 腿更粗、关节球更大。桌宠是要压在文档上看的，
+        #   粗一档在浅底文字里才不断线；顺带把这两个直接照搬的系数换掉了。
+        lw = 1.42 * math.sqrt(CS.BASE_SCALE) * unit
+        dr = (CS.BASE_SCALE ** 0.52) * unit
 
         # 身体侧摆（垂直于朝向的偏移，局部单位）：腿的髋部跟着身体一起晃，
         # 脚钉在地上不动 → 视觉上就是躯干在腿上轻轻转移重心。
