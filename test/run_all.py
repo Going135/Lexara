@@ -66,6 +66,8 @@ CASES = [
     # 2026-10-18 新增（任务书 §2.2 / §4 / §5 / §6 / §7）：
     # 收藏夹分类统计、桌宠生命周期幂等、日历/成就口径、导出 PNG、开机自启动。
     ("收藏夹五分类与兜底（§2.2）", "test/test_favorites.py", "unittest"),
+    # 导出三个出口：txt 分节/遮答案、csv 转义、json 备份形状 + BOM/原子落盘。
+    ("单词本导出 txt/csv/json", "test/test_word_export.py", "unittest"),
     ("桌宠生命周期：部署/收回/自动部署（§4 §6）", "test/test_app_lifecycle.py", "unittest"),
     ("学习日历与成就（§7）", "test/test_activity.py", "unittest"),
     ("导出学习日历 PNG（§7.4）", "test/test_calendar_export.py", "unittest"),

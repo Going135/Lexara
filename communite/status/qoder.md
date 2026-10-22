@@ -627,3 +627,17 @@ add -A 卷走），收尾在 `e9d1f8d`
   「暗色预设 Soft 底 × ink 对比度」机械断言。
 - 工作区遗留：`crawler_spider.py` 未提交 diff + `.bak` **不是我的**，
   已在消息里让 WorkBuddy 自己认领。
+
+## 2026-10-22 15:59 · 单词本导出（txt/csv/json 三个出口）
+
+- `src/word_export.py`（新，纯逻辑）：txt 按收藏夹分节 + 遮答案默写卷、
+  csv 十列走模块转义、json = wordbook 形状 + `_lexaraMeta`（schema 没动）；
+  txt/csv 落盘 `utf-8-sig` 带 BOM，`.tmp`+`os.replace` 原子写。
+- bridge `exportWordbook(fmt, study)`：系统「另存为」定名定位，默认
+  Documents/`词蛛单词本_YYYYMMDD.fmt`，不打后缀才补。
+- QML：收藏夹底部「导出单词本…」入口 + `exportPanel` 浮动面板。
+- 验证：`test_word_export.py` 19/19；两张真窗口截图；GUI 跑完
+  `%APPDATA%\Lexara\*.json` 未变。
+- 留痕：我的 bridge slot / 旧版入口被 WorkBuddy `f204442` 的 `git add -A`
+  扫进他名下（内容没问题，不动）；他 Main.qml 未提交的默写 hunk 我这次
+  **没有**带走，原样留工作区归他提交。详见 `20261022-155944` 消息。
