@@ -12,12 +12,12 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, QThread, Signal
+from PySide6.QtCore import QByteArray, QCoreApplication, QEvent, QObject, QRect, QThread, Signal
 from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import QApplication
 
 from ai.translation import (MAX_SOURCE_CHARS, TranslationService, build_messages,
-                            lines_to_text)
+                            lines_to_text, _OcrWorker)
 from translation_dialog import TranslationDialog, card_geometry
 
 APP = QApplication.instance() or QApplication([])
@@ -40,6 +40,7 @@ class Config:
 class Worker(QObject):
     finished_with = Signal(object, object)
     finished = Signal()
+    progress = Signal(object)
 
     def __init__(self, *args, **kwargs):
         super().__init__(kwargs.get("parent"))
@@ -106,6 +107,18 @@ class TextTests(unittest.TestCase):
             with self.subTest(text=text[:20]), self.assertRaises(ValueError):
                 build_messages(text)
 
+    def test_heading_and_numbered_items_stay_separate(self):
+        self.assertEqual(lines_to_text([
+            line("阅读计划", 0, 0, h=30), line("1. 阅读文章", 0, 42),
+            line("2. 复习单词", 0, 68), line("技术说明：只发送文字。", 0, 105),
+        ]), "阅读计划\n\n1. 阅读文章\n\n2. 复习单词\n\n技术说明：只发送文字。")
+
+    def test_short_chinese_wrapped_tail_is_kept(self):
+        self.assertEqual(lines_to_text([
+            line("先阅读文章，再复习单", 0, 0), line("词。", 0, 24, w=30),
+            line("下一条消息。", 0, 75),
+        ]), "先阅读文章，再复习单词。\n\n下一条消息。")
+
 
 class ServiceTests(unittest.TestCase):
     def test_ocr_to_translation_sends_only_source(self):
@@ -146,6 +159,41 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(h.service.state["state"], "idle")
         self.assertEqual(h.service.state["text"], "")
 
+    def test_partial_text_is_visible_but_old_partial_is_ignored(self):
+        h = Harness()
+        h.service.translate("第一段中文")
+        old = h.workers[-1]
+        old.progress.emit("First")
+        self.assertEqual(h.service.state["text"], "First")
+        self.assertIsNotNone(h.service.state["first_text_seconds"])
+        h.service.translate("第二段中文")
+        old.progress.emit("stale")
+        self.assertEqual(h.service.state["text"], "")
+        h.workers[-1].progress.emit("Second")
+        h.workers[-1].reply("Second paragraph.")
+        self.assertEqual(h.service.state["text"], "Second paragraph.")
+
+    def test_low_confidence_requires_review_without_sending(self):
+        h = Harness()
+        h.service.recognize(object())
+        h.ocrs[-1].reply("疑似原文", uncertain=[{"text": "疑似原文", "confidence": 0.61}])
+        self.assertEqual(h.service.state["state"], "review")
+        self.assertEqual(h.workers, [])
+        self.assertIn("1 行", h.service.state["warning"])
+        h.service.translate("已核对的原文")
+        self.assertEqual(h.workers[-1].args[3][-1]["content"], "已核对的原文")
+
+    def test_ocr_keeps_low_confidence_line(self):
+        uncertain = line("词。", 0, 0)
+        uncertain.score = 0.55
+        worker = _OcrWorker(object(), min_conf=0.9)
+        replies = []
+        worker.finished_with.connect(lambda ok, payload: replies.append(payload))
+        with patch("ai.translation.recognize_translation_lines", return_value=[uncertain]):
+            worker.run()
+        self.assertEqual(replies[0]["text"], "词。")
+        self.assertEqual(len(replies[0]["uncertain"]), 1)
+
     def test_configuration_and_source_fail_without_request(self):
         for config, text, code in ((Config(key=""), "中文", "not_configured"),
                                    (Config(model=""), "中文", "not_configured"),
@@ -173,6 +221,26 @@ class ServiceTests(unittest.TestCase):
 
 
 class DialogTests(unittest.TestCase):
+    def test_low_confidence_highlights_after_emoji_and_requires_confirmation(self):
+        h = Harness()
+        dialog = TranslationDialog({}, service=h.service)
+        try:
+            h.service.recognize(object())
+            h.ocrs[-1].reply("你好😀疑似文字", uncertain=[{"text": "疑似文字", "confidence": 0.6}])
+            self.assertEqual(dialog.source.toPlainText(), "你好😀疑似文字")
+            self.assertEqual(dialog.retry.text(), "确认并翻译")
+            selections = dialog.source.extraSelections()
+            self.assertEqual(selections[0].cursor.selectedText(), "疑似文字")
+            self.assertFalse(h.workers)
+            dialog.source.setPlainText("修改后的准确文字")
+            dialog.retry.click()
+            self.assertEqual(h.service.state["warning"], "")
+            self.assertEqual(h.workers[-1].args[3][-1]["content"], "修改后的准确文字")
+        finally:
+            dialog.close()
+            dialog.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
     def test_card_stays_on_negative_origin_and_small_screens(self):
         for available in (QRect(-1920, 0, 1920, 1040), QRect(0, 0, 320, 400)):
             for selection in (QRect(-50, 950, 40, 40), QRect(10, 10, 200, 120)):
@@ -203,6 +271,49 @@ class DialogTests(unittest.TestCase):
 
 
 class HttpTests(unittest.TestCase):
+    def test_stream_rejection_falls_back_once_but_auth_does_not_retry(self):
+        for code in (400, 401):
+            with self.subTest(code=code):
+                calls = []
+                class Handler(BaseHTTPRequestHandler):
+                    def log_message(self, *_args):
+                        pass
+
+                    def do_POST(self):
+                        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                        calls.append(body["stream"])
+                        if body["stream"]:
+                            data = b'{"error":"stream is unsupported"}'
+                            self.send_response(code)
+                        else:
+                            data = b'{"choices":[{"message":{"content":"Hello."},"finish_reason":"stop"}]}'
+                            self.send_response(200)
+                        self.send_header("Content-Type", "application/json")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+
+                server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                service = TranslationService(Config(base="http://127.0.0.1:%d/v1" % server.server_port))
+                try:
+                    service.translate("你好")
+                    deadline = time.monotonic() + 5
+                    while service.state["state"] == "translating" and time.monotonic() < deadline:
+                        APP.processEvents()
+                        time.sleep(0.01)
+                    self.assertEqual(calls, [True, False] if code == 400 else [True])
+                    self.assertEqual(service.state["state"], "done" if code == 400 else "error")
+                    if code == 401:
+                        self.assertEqual(service.state["code"], "auth")
+                finally:
+                    service.shutdown()
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(2)
+                    APP.processEvents()
+
     def test_real_worker_uses_text_only_and_delivers_on_gui_thread(self):
         requests = []
 
@@ -237,7 +348,7 @@ class HttpTests(unittest.TestCase):
             self.assertEqual(requests[0][0], "/v1/chat/completions")
             body = requests[0][1]
             self.assertEqual(body["messages"][-1], {"role": "user", "content": "你好，世界。"})
-            self.assertEqual(set(body), {"model", "messages", "temperature", "max_tokens"})
+            self.assertEqual(set(body), {"model", "messages", "temperature", "max_tokens", "stream"})
         finally:
             service.shutdown()
             server.shutdown()
@@ -245,8 +356,76 @@ class HttpTests(unittest.TestCase):
             thread.join(2)
             APP.processEvents()
 
+    def test_sse_progress_precedes_completion_and_incomplete_stream_fails(self):
+        for complete in (True, False):
+            with self.subTest(complete=complete):
+                class Handler(BaseHTTPRequestHandler):
+                    def log_message(self, *_args):
+                        pass
+
+                    def do_POST(self):
+                        self.rfile.read(int(self.headers["Content-Length"]))
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.end_headers()
+                        for text in ("Hello", ", world."):
+                            packet = json.dumps({"choices": [{"delta": {"content": text}}]})
+                            self.wfile.write(("data: " + packet + "\r\n\r\n").encode())
+                            self.wfile.flush()
+                            time.sleep(0.08)
+                        if complete:
+                            self.wfile.write(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+
+                server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                service = TranslationService(Config(base="http://127.0.0.1:%d/v1" % server.server_port))
+                phases = []
+                service.changed.connect(lambda: phases.append((service.state["state"], service.state["text"])))
+                try:
+                    service.translate("你好世界")
+                    deadline = time.monotonic() + 5
+                    while service.state["state"] == "translating" and time.monotonic() < deadline:
+                        APP.processEvents()
+                        time.sleep(0.01)
+                    self.assertIn(("translating", "Hello"), phases)
+                    self.assertEqual(service.state["state"], "done" if complete else "error")
+                    if not complete:
+                        self.assertEqual(service.state["code"], "incomplete_stream")
+                finally:
+                    service.shutdown()
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(2)
+                    APP.processEvents()
+
 
 class CaptureTests(unittest.TestCase):
+    def test_native_hotkeys_have_independent_ids_and_unregister(self):
+        import ctypes
+        import pet_window as module
+        callbacks = []
+        with patch.object(module.ctypes.windll.user32, "RegisterHotKey", return_value=1) as register, \
+             patch.object(module.ctypes.windll.user32, "UnregisterHotKey") as unregister:
+            scan = module._GlobalScanHotkey(lambda: callbacks.append("scan"))
+            translation = module._GlobalScanHotkey(lambda: callbacks.append("translation"), key="T",
+                        hotkey_id=module.TRANSLATION_HOTKEY_ID, modifiers=module.MOD_CONTROL | module.MOD_ALT)
+            msg = module.MSG()
+            msg.message, msg.wParam = module.WM_HOTKEY, module.TRANSLATION_HOTKEY_ID
+            self.assertFalse(scan.nativeEventFilter("windows_generic_MSG", ctypes.addressof(msg))[0])
+            self.assertTrue(translation.nativeEventFilter("windows_generic_MSG", ctypes.addressof(msg))[0])
+            APP.processEvents()
+            self.assertEqual(callbacks, ["translation"])
+            self.assertTrue(translation.nativeEventFilter(QByteArray(b"windows_dispatcher_MSG"),
+                                                         ctypes.addressof(msg))[0])
+            APP.processEvents()
+            self.assertEqual(callbacks, ["translation", "translation"])
+            self.assertEqual(register.call_args_list[1].args[1], module.TRANSLATION_HOTKEY_ID)
+            scan.unregister()
+            translation.unregister()
+            self.assertEqual([c.args[1] for c in unregister.call_args_list],
+                             [module.HOTKEY_ID, module.TRANSLATION_HOTKEY_ID])
+
     def test_selection_dpr_and_negative_monitor_origin(self):
         from pet_window import PetWindow
         with patch.object(PetWindow, "_make_tray"):
@@ -264,7 +443,8 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual((size.width(), size.height()), (300, 90))
             self.assertEqual(rect, QRect(-1820, 80, 200, 60))
             self.assertEqual(pet._workers, [])  # never enters dictionary/learning
-            self.assertIn("框选中译英（AI）", [a.text() for a in pet._make_menu().actions()])
+            self.assertTrue(any(a.text().startswith("框选中译英（AI）") for a in pet._make_menu().actions()))
+            self.assertEqual(pet.translation_shortcut.key().toString(), "Ctrl+Alt+T")
             pet._scan_generation = 2
             pet._on_ocr_done([{"unexpected": "stale English scan"}], {"request_id": 1}, "")
         finally:

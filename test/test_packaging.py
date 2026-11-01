@@ -19,9 +19,14 @@ import os
 import re
 import sys
 import unittest
+import tempfile
+from pathlib import Path
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "src"))
+sys.path.insert(0, BASE)
+
+from tools.build_runtime import pin_qt_runtime
 
 SPECS = ("Lexara.spec", "LexaraDebug.spec", "LexaraFixed.spec",
          "LexaraPortable.spec", "LexaraPortableDebug.spec")
@@ -47,6 +52,27 @@ def _py_files(*roots):
 
 
 class SpecDropCase(unittest.TestCase):
+    def test_all_specs_pin_qt_runtime_at_archive_root(self):
+        for spec in SPECS:
+            self.assertIn("a.binaries = pin_qt_runtime(a.binaries)", _read(spec))
+
+    def test_old_path_runtime_is_replaced_without_dropping_other_libraries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
+                Path(tmp, name).write_bytes(b"test fixture")
+            entries = [("MSVCP140.dll", "old/libheif/MSVCP140.dll", "BINARY"),
+                       ("PySide6/Qt6Core.dll", "qt/Qt6Core.dll", "BINARY"),
+                       ("numpy.libs/msvcp140-hashed.dll", "numpy/runtime.dll", "BINARY"),
+                       ("icuuc.dll", "poppler/icuuc.dll", "BINARY"),
+                       ("icudt78.dll", "poppler/icudt78.dll", "BINARY")]
+            result = pin_qt_runtime(entries, tmp)
+            self.assertFalse(any("libheif" in entry[1] for entry in result))
+            self.assertIn(entries[1], result)
+            self.assertIn(entries[2], result)
+            self.assertFalse(any(e[0] in ("icuuc.dll", "icudt78.dll") for e in result))
+            self.assertEqual(next(e[1] for e in result if e[0] == "msvcp140.dll"),
+                             str(Path(tmp, "msvcp140.dll")))
+
     """五个 spec 都要剔除 ffmpeg 插件，且**不能**顺手把 cv2 排除掉。"""
 
     def test_all_specs_drop_ffmpeg(self):

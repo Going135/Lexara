@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
+from tools.build_runtime import pin_qt_runtime
 
 datas = [('assets/icon.ico', 'assets'), ('assets/ecdict.sqlite', 'assets'), ('assets/exam-tags.sqlite', 'assets'), ('assets/industry.sqlite', 'assets'), ('assets/skins', 'assets/skins'), ('assets/jar_crack_01.png', 'assets'), ('assets/jar_crack_02.png', 'assets'), ('assets/jar_crack_03.png', 'assets'), ('assets/sfx', 'assets/sfx'), ('assets/ui', 'assets/ui'), ('src/qml', 'qml')]
 binaries = []
@@ -17,7 +18,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.QtMultimedia', 'PySide6.Qt3DCore', 'PySide6.QtCharts', 'PySide6.QtDesigner', 'PySide6.QtSql', 'PySide6.QtTest', 'tkinter', 'PyQt5'],
+    excludes=['PySide6.QtWebEngineCore', 'PySide6.QtWebEngineWidgets', 'PySide6.QtMultimedia', 'PySide6.Qt3DCore', 'PySide6.QtCharts', 'PySide6.QtDesigner', 'PySide6.QtSql', 'PySide6.QtTest', 'tkinter', 'PyQt5', '__main__'],
     noarchive=False,
     optimize=0,
 )
@@ -41,6 +42,7 @@ a.datas = [d for d in a.datas
            if "/translations/" not in d[0].replace("\\", "/")
            or "zh_CN" in d[0] or d[0].replace("\\", "/").endswith("_en.qm")]
 
+a.binaries = pin_qt_runtime(a.binaries)
 pyz = PYZ(a.pure)
 
 exe = EXE(

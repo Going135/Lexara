@@ -71,25 +71,30 @@ class MSG(ctypes.Structure):
 
 WM_HOTKEY = 0x0312
 HOTKEY_ID = 0x4C58
+TRANSLATION_HOTKEY_ID = 0x4C59
 MOD_ALT, MOD_CONTROL, MOD_SHIFT = 0x0001, 0x0002, 0x0004
 
 class _GlobalScanHotkey(QAbstractNativeEventFilter):
     """Windows 全局 Ctrl+Shift+S；Qt 窗口未聚焦时也能启动框选。"""
-    def __init__(self, callback):
+    def __init__(self, callback, key="S", hotkey_id=HOTKEY_ID,
+                 modifiers=MOD_CONTROL | MOD_SHIFT):
         super().__init__()
         self.callback = callback
+        self.hotkey_id = hotkey_id
         self.registered = False
         try:
             self.registered = bool(ctypes.windll.user32.RegisterHotKey(
-                None, HOTKEY_ID, MOD_CONTROL | MOD_SHIFT, ord("S")))
+                None, hotkey_id, modifiers | 0x4000, ord(key)))  # MOD_NOREPEAT
         except Exception:
             self.registered = False
 
     def nativeEventFilter(self, eventType, message):
-        if self.registered and str(eventType) in ("windows_generic_MSG", "windows_dispatcher_MSG"):
+        event_name = (bytes(eventType).decode("ascii", errors="replace")
+                      if isinstance(eventType, (bytes, QByteArray)) else str(eventType))
+        if self.registered and event_name in ("windows_generic_MSG", "windows_dispatcher_MSG"):
             try:
                 msg = ctypes.cast(int(message), ctypes.POINTER(MSG)).contents
-                if msg.message == WM_HOTKEY and int(msg.wParam) == HOTKEY_ID:
+                if msg.message == WM_HOTKEY and int(msg.wParam) == self.hotkey_id:
                     QTimer.singleShot(0, self.callback)
                     return True, 0
             except Exception:
@@ -98,7 +103,7 @@ class _GlobalScanHotkey(QAbstractNativeEventFilter):
 
     def unregister(self):
         if self.registered:
-            try: ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID)
+            try: ctypes.windll.user32.UnregisterHotKey(None, self.hotkey_id)
             except Exception: pass
             self.registered = False
 
@@ -528,6 +533,15 @@ class PetWindow(QWidget):
         QApplication.instance().installNativeEventFilter(self._global_scan_hotkey)
         if not self._global_scan_hotkey.registered:
             _log("[hotkey] 全局 Ctrl+Shift+S 注册失败，保留应用内快捷键")
+        self.translation_shortcut = QShortcut(QKeySequence("Ctrl+Alt+T"), self)
+        self.translation_shortcut.setContext(Qt.ApplicationShortcut)
+        self.translation_shortcut.activated.connect(self.start_translation_capture)
+        self._global_translation_hotkey = _GlobalScanHotkey(
+            self.start_translation_capture, key="T", hotkey_id=TRANSLATION_HOTKEY_ID,
+            modifiers=MOD_CONTROL | MOD_ALT)
+        QApplication.instance().installNativeEventFilter(self._global_translation_hotkey)
+        if not self._global_translation_hotkey.registered:
+            _log("[hotkey] 全局 Ctrl+Alt+T 注册失败，保留应用内快捷键")
 
         # 识词。考纲默认值只有 `settings_store.DEFAULTS` 一处来源（四级）；
         # 这里写死字面量会和启动台分叉 —— 没启动台时桌宠自己开出来是另一档。
@@ -1496,6 +1510,8 @@ class PetWindow(QWidget):
         try:
             QApplication.instance().removeNativeEventFilter(self._global_scan_hotkey)
             self._global_scan_hotkey.unregister()
+            QApplication.instance().removeNativeEventFilter(self._global_translation_hotkey)
+            self._global_translation_hotkey.unregister()
         except Exception:
             pass
         # ★ 感应必须**最先**停：它有一个自转的抓屏 QTimer 和一个后台线程。
@@ -1968,7 +1984,9 @@ class PetWindow(QWidget):
             return action
 
         add("框选识词", self.start_capture, icon_kind="capture")
-        add("框选中译英（AI）", self.start_translation_capture, icon_kind="capture")
+        translation_action = add("框选中译英（AI）\tCtrl+Alt+T", self.start_translation_capture, icon_kind="capture")
+        if not self._global_translation_hotkey.registered:
+            translation_action.setToolTip("全局快捷键被占用；可使用此菜单，或在 Lexara 内按 Ctrl+Alt+T。")
         add("我的单词本", self.open_wordbook, icon_kind="book")
         add("识词设置（%s）" % self._mode_label(), self.open_settings, icon_kind="settings")
         menu.addSeparator()

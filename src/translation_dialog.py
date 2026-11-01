@@ -1,8 +1,10 @@
 """Editable source and a plain-text English result next to a screen selection."""
-from PySide6.QtCore import QRect, Qt, Signal
-from PySide6.QtGui import QGuiApplication
+import time
+
+from PySide6.QtCore import QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QGuiApplication, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel,
-                               QPlainTextEdit, QPushButton, QVBoxLayout)
+                               QPlainTextEdit, QPushButton, QTextEdit, QVBoxLayout)
 
 from ai.config import AIConfig
 from ai.translation import MAX_SOURCE_CHARS, TranslationService
@@ -39,6 +41,11 @@ class TranslationDialog(QDialog):
             QPushButton#translate:disabled {{ background:{SURFACE_ALT}; color:#747474; }}
         """)
         self.resize(480, 520)
+        self._phase = "idle"
+        self._phase_started = time.monotonic()
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(100)
+        self._elapsed_timer.timeout.connect(self._refresh_status)
         self.service = service or TranslationService(AIConfig(settings), self)
         self.service.changed.connect(self._refresh)
         layout = QVBoxLayout(self)
@@ -58,6 +65,12 @@ class TranslationDialog(QDialog):
         self.counter = QLabel()
         self.counter.setObjectName("sub")
         layout.addWidget(self.counter)
+        self.warning = QLabel()
+        self.warning.setTextFormat(Qt.PlainText)
+        self.warning.setWordWrap(True)
+        self.warning.setStyleSheet("color:#8A6A2B;font-size:11px;")
+        self.warning.hide()
+        layout.addWidget(self.warning)
         layout.addWidget(QLabel("英文译文"))
         self.result = QPlainTextEdit()
         self.result.setObjectName("translationResult")
@@ -101,27 +114,67 @@ class TranslationDialog(QDialog):
         # Never offer an old translation for newly edited source material.
         if not busy and self.source.toPlainText().strip() != self.service.state["source"]:
             self.result.clear()
+            self.source.setExtraSelections([])
+            self.warning.hide()
             self.copy.setEnabled(False)
             self.status.setText("原文已修改，点击翻译生成新译文。")
 
     def _refresh(self):
         state = self.service.state
         phase = state["state"]
+        if phase != self._phase:
+            self._phase, self._phase_started = phase, time.monotonic()
         busy = phase in ("recognizing", "translating")
         self.source.setReadOnly(busy)
-        if phase == "recognizing" or phase in ("translating", "done", "error"):
+        if phase in ("recognizing", "review", "translating", "done", "error"):
             if self.source.toPlainText() != state["source"]:
                 self.source.setPlainText(state["source"])
-        self.result.setPlainText(state["text"])
+        if self.result.toPlainText() != state["text"]:
+            scrollbar = self.result.verticalScrollBar()
+            follow, old_position = scrollbar.value() >= scrollbar.maximum() - 2, scrollbar.value()
+            self.result.setPlainText(state["text"])
+            scrollbar.setValue(scrollbar.maximum() if follow else old_position)
         self.copy.setEnabled(phase == "done" and bool(state["text"]))
-        self.retry.setText("重试" if phase == "error" else "重新翻译" if phase == "done" else "翻译")
+        self.retry.setText("确认并翻译" if phase == "review" else
+                           "重试" if phase == "error" else "重新翻译" if phase == "done" else "翻译")
+        self.warning.setText(state.get("warning", ""))
+        self.warning.setVisible(bool(state.get("warning")))
+        selections = []
+        original = self.source.toPlainText()
+        for item in state.get("uncertain", []):
+            start = original.find(item["text"])
+            if start < 0:
+                continue
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = QTextCursor(self.source.document())
+            # Qt uses UTF-16 positions (an emoji occupies two code units).
+            selection.cursor.setPosition(len(original[:start].encode("utf-16-le")) // 2)
+            end = start + len(item["text"])
+            selection.cursor.setPosition(len(original[:end].encode("utf-16-le")) // 2, QTextCursor.KeepAnchor)
+            selection.format = QTextCharFormat()
+            selection.format.setBackground(QColor("#FFF0B3"))
+            selections.append(selection)
+        self.source.setExtraSelections(selections)
         self._edited()
-        self.status.setText({
-            "recognizing": "正在本机识别中文…",
-            "translating": "正在翻译… 可关闭窗口取消。",
-            "done": "翻译完成。",
-        }.get(phase, state["error"]))
+        if busy:
+            self._elapsed_timer.start()
+        else:
+            self._elapsed_timer.stop()
+        self._refresh_status()
         self.busyChanged.emit(busy)
+
+    def _refresh_status(self):
+        state, phase = self.service.state, self.service.state["state"]
+        elapsed = time.monotonic() - self._phase_started
+        translating = ("正在生成英文 · 已显示 %d 字符 · %.1f 秒" % (len(state["text"]), elapsed)
+                       if state["text"] else "正在等待译文 · %.1f 秒" % elapsed)
+        self.status.setText({
+            "recognizing": "正在本机识别中文 · %.1f 秒" % elapsed,
+            "review": "核对黄色文字后，点击「确认并翻译」。",
+            "translating": translating + " · 关闭可取消",
+            "done": "翻译完成 · 识别 %.1f 秒 · 翻译 %.1f 秒" % (
+                state.get("ocr_seconds", 0), state.get("translation_seconds", 0)),
+        }.get(phase, state["error"]))
 
     def _copy(self):
         QApplication.clipboard().setText(self.result.toPlainText())

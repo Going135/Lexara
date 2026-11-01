@@ -24,7 +24,7 @@
 
 **Offline word lookup and review.** Screenshots, OCR, dictionary lookups and review scheduling all happen on your machine — no uploads, no account, no bundled API keys.
 
-**Optional Chinese-to-English screen translation (AI):** right-click the spider and choose “框选中译英（AI）”, then select Chinese text. The translation card supports editing the source, retrying and copying the English result. Configure your compatible model service in Settings → AI Model first. Chinese OCR runs locally; only recognized text is sent to the configured service, never screenshots.
+**Optional Chinese-to-English screen translation (AI):** press **Ctrl+Alt+T**, or right-click the spider and choose “框选中译英（AI）”, then select Chinese text. English appears progressively; uncertain source lines are highlighted for confirmation before translation. The card supports editing, retrying and copying. Configure your compatible model service in Settings → AI Model first. Chinese OCR runs locally; only recognized text is sent to the configured service, never screenshots.
 
 **The spider is computed, not animated.** Eight walking legs plus two antennae, two-bone IK, threshold-driven gait, solved every frame. No sprite sheet, no skeletal animation files.
 

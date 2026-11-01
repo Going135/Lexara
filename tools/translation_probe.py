@@ -51,14 +51,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         received.append(body)
-        reply = {"choices": [{"message": {"content": (
-            "Today's study plan is to read English articles. Practice for 30 minutes "
-            "every day, using AI to support your learning.")}, "finish_reason": "stop"}]}
-        data = json.dumps(reply).encode()
         self.send_response(200)
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
-        self.wfile.write(data)
+        for text in ("Today's study plan is to read English articles. ",
+                     "Practice for 30 minutes every day, ",
+                     "using AI to support your learning."):
+            packet = {"choices": [{"delta": {"content": text}}]}
+            self.wfile.write(("data: " + json.dumps(packet) + "\n\n").encode())
+            self.wfile.flush()
+            time.sleep(0.12)
+        self.wfile.write(b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
 
 
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -82,8 +85,17 @@ dialog = TranslationDialog({}, service=service)
 try:
     started = time.monotonic()
     dialog.begin(qimage_to_ndarray(image), QRect(40, 40, 900, 220))
-    while service.state["state"] in ("recognizing", "translating"):
+    stream_preview = False
+    while service.state["state"] in ("recognizing", "translating", "review"):
+        if service.state["state"] == "review":
+            dialog.grab().save(str(OUT / "translation-review.png"))
+            # This fixture is self-authored; simulate explicitly confirming its
+            # recognized source. Production UI never skips this review step.
+            service.translate(service.state["source"])
         app.processEvents()
+        if service.state["state"] == "translating" and service.state["text"] and not stream_preview:
+            dialog.grab().save(str(OUT / "translation-stream.png"))
+            stream_preview = True
         if time.monotonic() - started > 50:
             raise TimeoutError("translation probe timed out")
         time.sleep(0.01)
