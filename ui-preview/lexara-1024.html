@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>词蛛 LEXARA · 一只住在桌面上的蜘蛛，用八条腿帮你背单词</title>
+<meta name="description" content="词蛛 LEXARA：Windows 桌面上的识词桌宠。点蜘蛛的头、框住屏幕上一段英文，八条腿各踩住一个单词，给出音标、释义与考纲标签。全程离线。">
+<style>
+:root{
+  --ink:#1c2a22;
+  --ink-soft:#4a5b50;
+  --cream:#f7f4ea;
+  --cream-2:#efeade;
+  --card:#fffdf7;
+  --green:#2f6b4c;
+  --green-deep:#1f4a34;
+  --line:#dbd4c2;
+  --navy:#2b3866;
+  --chip:#1b2333;
+  --serif:"Iowan Old Style","Palatino Linotype",Georgia,"Songti SC","Noto Serif SC",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--cream);color:var(--ink);
+  font-family:var(--sans);line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(circle at 12% -8%,rgba(47,107,76,.10),transparent 45%),radial-gradient(circle at 92% 4%,rgba(43,56,102,.08),transparent 40%);
+  background-repeat:no-repeat;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+section{padding:64px 0}
+h2{font-size:26px;letter-spacing:-.2px;margin:0 0 8px}
+h2 .num{font-family:var(--mono);font-size:12px;color:var(--green);letter-spacing:.14em;display:block;margin-bottom:10px;font-weight:600}
+.lead{color:var(--ink-soft);margin:0 0 32px;max-width:62ch}
+a{color:var(--green)}
+code{font-family:var(--mono);font-size:.9em;background:rgba(47,107,76,.09);padding:1px 5px;border-radius:4px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 24px}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+.mark{width:46px;height:46px;border-radius:13px;background:linear-gradient(150deg,#356f50,#1f4a34);display:grid;place-items:center;box-shadow:0 6px 18px -8px rgba(31,74,52,.7)}
+.mark svg{display:block}
+.brand-name{font-size:15px;letter-spacing:.28em;font-weight:700;color:var(--green-deep)}
+.brand-sub{font-size:12px;letter-spacing:.32em;color:#8a9a8f;margin-top:-4px}
+h1{font-size:clamp(30px,4.4vw,50px);line-height:1.18;letter-spacing:-.9px;margin:0 0 20px;font-weight:750}
+h1 em{font-style:normal;color:var(--green);background:linear-gradient(transparent 62%,rgba(47,107,76,.18) 62%)}
+.hero p.sub{font-size:17px;color:var(--ink-soft);max-width:60ch;margin:0 0 26px}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:28px}
+.badge{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink-soft);font-family:var(--mono)}
+.badge b{color:var(--green-deep)}
+.cta{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:12px;text-decoration:none;font-size:15px;font-weight:600;transition:transform .16s ease,box-shadow .16s ease}
+.btn-primary{background:var(--green);color:#fff;box-shadow:0 10px 24px -12px rgba(47,107,76,.9)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 14px 28px -12px rgba(47,107,76,.95)}
+.btn-ghost{border:1px solid var(--line);color:var(--ink);background:var(--card)}
+.btn-ghost:hover{border-color:var(--green)}
+
+/* ---------- demo ---------- */
+.demo-shell{
+  background:linear-gradient(180deg,#e9e3d3,#e2dbc8);
+  border-radius:22px;padding:12px;border:1px solid #d8d0bc;
+  box-shadow:0 30px 60px -40px rgba(28,42,34,.45);
+}
+.demo-bar{display:flex;align-items:center;gap:10px;padding:2px 8px 10px}
+.dots{display:flex;gap:6px}
+.dots i{width:9px;height:9px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:#e8846f}.dots i:nth-child(2){background:#e9c063}.dots i:nth-child(3){background:#7fbf95}
+.demo-bar .file{font-family:var(--mono);font-size:11.5px;color:#7d8a7f;letter-spacing:.04em}
+.demo-bar .right{margin-left:auto;font-size:11.5px;color:#8b978d;font-family:var(--mono)}
+
+.stage{
+  position:relative;height:580px;border-radius:14px;overflow:hidden;
+  background:#fdfcf8;border:1px solid #e3ddce;
+  user-select:none;-webkit-user-select:none;touch-action:none;
+  transition:filter .18s ease;
+}
+.stage.frozen{filter:brightness(.93) saturate(.94)}
+.doc{position:absolute;inset:0;padding:42px 46px 176px}
+.doc .kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:#a8b2a8;margin-bottom:20px}
+.doc p{font-family:var(--serif);font-size:17.5px;line-height:1.95;color:#22302a;margin:0 0 20px;letter-spacing:.1px}
+.w{transition:opacity .18s ease;cursor:text}
+.w.peg{
+  background:var(--chip);color:#fff;font-family:var(--sans);font-weight:700;
+  font-size:.93em;letter-spacing:.1px;padding:1px 5px;border-radius:4px;
+  box-shadow:0 0 0 1.6px var(--c),0 0 16px -4px var(--c);
+  animation:chipIn .4s cubic-bezier(.2,1.25,.4,1) both;
+}
+@keyframes chipIn{
+  from{background:transparent;color:inherit;box-shadow:0 0 0 1.6px rgba(0,0,0,0)}
+  to{background:var(--chip);color:#fff;box-shadow:0 0 0 1.6px var(--c),0 0 16px -4px var(--c)}
+}
+
+#legs{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.selbox{position:absolute;border:1px dashed var(--green);background:rgba(47,107,76,.11);border-radius:3px;pointer-events:none}
+
+.hint{
+  position:absolute;right:16px;top:12px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:flex-end;
+  background:rgba(255,253,247,.94);border:1px solid #e3ddce;border-radius:999px;
+  padding:7px 14px;font-size:12.5px;color:var(--ink-soft);backdrop-filter:blur(4px);
+  box-shadow:0 12px 26px -22px rgba(28,42,34,.7);transition:opacity .25s ease;
+}
+.hint kbd{font-family:var(--mono);font-size:11px;background:#efeade;border:1px solid #ddd6c5;border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:#5c6b60}
+.hint button{
+  font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:var(--green);
+  border:0;border-radius:999px;padding:5px 13px;cursor:pointer;
+}
+.hint button:hover{background:var(--green-deep)}
+.hint.hide{opacity:0;pointer-events:none}
+
+.status{
+  position:absolute;left:22px;top:14px;font-family:var(--mono);font-size:11px;color:#7f8d83;
+  display:flex;gap:14px;flex-wrap:wrap;opacity:0;transition:opacity .3s ease;letter-spacing:.02em;
+}
+.status.on{opacity:1}
+.status b{color:var(--green-deep)}
+
+/* result card */
+.result{margin-top:18px}
+.result-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--ink-soft);min-height:34px}
+.result-head .pill{font-family:var(--mono);font-size:11px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 10px;color:var(--green-deep)}
+.result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+.rcard{
+  background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;
+  border-left:3px solid var(--c,#999);opacity:0;transform:translateY(8px);
+  animation:rise .4s ease forwards;
+}
+@keyframes rise{to{opacity:1;transform:none}}
+.rcard .en{font-weight:700;font-size:15px;color:var(--ink)}
+.rcard .ph{font-family:var(--mono);font-size:11.5px;color:#8b978d;margin:1px 0 4px}
+.rcard .cn{font-size:12.5px;color:var(--ink-soft);line-height:1.5}
+.rcard .tag{display:inline-block;margin-top:7px;font-size:10.5px;padding:1px 7px;border-radius:999px;background:rgba(47,107,76,.1);color:var(--green-deep);font-weight:600}
+.rcard .star{float:right;font-size:13px;color:#c9b98d;cursor:pointer;line-height:1;background:none;border:0;padding:0;font-family:inherit}
+.rcard .star.on{color:#d9a53a}
+.demo-note{margin-top:16px;font-size:12.5px;color:#85958a;line-height:1.75}
+.demo-note b{color:var(--ink-soft)}
+
+/* ---------- shots ---------- */
+.shot{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:0 24px 50px -44px rgba(28,42,34,.55)}
+.shot img{width:100%;display:block;border-radius:11px}
+.shot figcaption{font-size:12.5px;color:#85958a;padding:11px 6px 3px;line-height:1.7}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+
+/* ---------- flow ---------- */
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;counter-reset:s}
+.step{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 15px 18px;position:relative}
+.step:before{
+  counter-increment:s;content:counter(s,decimal-leading-zero);
+  font-family:var(--mono);font-size:11px;color:var(--green);letter-spacing:.1em;font-weight:700;
+}
+.step h3{font-size:14px;margin:8px 0 6px}
+.step p{font-size:12.5px;color:var(--ink-soft);margin:0;line-height:1.65}
+
+/* ---------- feature cards ---------- */
+.fcards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.fcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px}
+.fcard h3{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.fcard h3 span{width:22px;height:22px;border-radius:7px;background:rgba(47,107,76,.12);display:grid;place-items:center;font-size:12px}
+.fcard ul{margin:0;padding:0;list-style:none;font-size:13px;color:var(--ink-soft)}
+.fcard li{padding:5px 0 5px 15px;position:relative;line-height:1.6}
+.fcard li:before{content:"";position:absolute;left:0;top:13px;width:5px;height:5px;border-radius:50%;background:#a9b8ad}
+.fcard li b{color:var(--ink);font-weight:650}
+
+/* ---------- stats ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:26px}
+.stat{background:linear-gradient(180deg,#fffdf7,#f4efe2);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.stat b{display:block;font-size:24px;letter-spacing:-.5px;color:var(--green-deep);font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:#85958a}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+.panel h3{font-size:14px;margin:0 0 10px}
+.panel p{font-size:13.5px;color:var(--ink-soft);margin:0 0 10px}
+.panel p:last-child{margin-bottom:0}
+pre{font-family:var(--mono);font-size:12px;line-height:1.7;background:#1f2b24;color:#dfe7df;border-radius:12px;padding:16px 18px;overflow:auto;margin:0}
+pre .c{color:#8fae97}
+pre .k{color:#e3c98a}
+
+/* ---------- lists ---------- */
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.checklist{list-style:none;margin:0;padding:0;font-size:13.5px}
+.checklist li{padding:6px 0 6px 24px;position:relative;color:var(--ink-soft)}
+.checklist li:before{content:"✓";position:absolute;left:0;top:6px;color:var(--green);font-weight:700}
+.checklist.no li:before{content:"—";color:#b9a98c}
+.checklist b{color:var(--ink)}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);padding:34px 0 56px;margin-top:20px}
+footer .row{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;font-size:12.5px;color:#85958a}
+footer .row a{color:var(--green-deep);text-decoration:none;border-bottom:1px solid rgba(47,107,76,.3)}
+
+@media (max-width:900px){
+  .grid2,.fcards,.two,.cols{grid-template-columns:1fr}
+  .flow{grid-template-columns:1fr 1fr}
+  .stats{grid-template-columns:1fr 1fr}
+  .result-grid{grid-template-columns:1fr 1fr}
+  .stage{height:600px}
+  .doc{padding:36px 26px 200px}
+  .doc p{font-size:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap hero">
+  <div class="brand">
+    <div class="mark">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+        <path d="M13 3.5l4.2 4.4-1.1 9.1h-6.2L8.8 7.9 13 3.5z" fill="#dfe9df"/>
+        <path d="M9.2 8.6L3.4 5.4M9 12H2.8M9.4 15.4l-5 4M16.8 8.6l5.8-3.2M17 12h6.2M16.6 15.4l5 4" stroke="#cfe0cf" stroke-width="1.5" stroke-linecap="round"/>
+        <circle cx="11" cy="9" r="1" fill="#1f4a34"/><circle cx="15" cy="9" r="1" fill="#1f4a34"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">LEXARA</div>
+      <div class="brand-sub">词蛛</div>
+    </div>
+  </div>
+
+  <h1>一只住在 Windows 桌面上的蜘蛛，<br>用<em>八条腿</em>帮你背单词</h1>
+  <p class="sub">读到不认识的词，不用切走查词。点它的头、框住屏幕上一段英文，它趴到文字上，八条腿各踩住一个单词 —— 音标、中文释义、考纲标签，同时摆在你眼前。</p>
+
+  <div class="badges">
+    <span class="badge">Windows 10 / 11 <b>x64</b></span>
+    <span class="badge">OCR + 词典 <b>100% 离线</b></span>
+    <span class="badge">词库 <b>758,497</b> 条</span>
+    <span class="badge">Python 3.13 · PySide6</span>
+    <span class="badge"><b>MIT</b> 许可</span>
+  </div>
+
+  <div class="cta">
+    <a class="btn btn-primary" href="#demo">先拖一个框试试 →</a>
+    <a class="btn btn-ghost" href="#download">下载桌面版</a>
+  </div>
+</div>
+
+<section id="demo" style="padding-top:24px">
+  <div class="wrap">
+    <h2><span class="num">LIVE DEMO / 网页版</span>把框拖到文字上，看它爬过来</h2>
+    <p class="lead">下面是真实链路的浏览器复刻：拖框 → 挑词 → 八条腿分配 → 词框配色 → 结果卡。真实程序里这一整段由本机 OCR 完成，这里用内置的一段英文和 31 条词典数据顶替。</p>
+
+    <div class="demo-shell">
+      <div class="demo-bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <span class="file">field-notes / chapter-04 · refactoring.txt</span>
+        <span class="right" id="clock">1920 × 1080</span>
+      </div>
+
+      <div class="stage" id="stage">
+        <svg id="legs" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+              <feGaussianBlur stdDeviation="3.4" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <g id="legLayer"></g>
+          <g id="bodyLayer"></g>
+        </svg>
+
+        <div class="doc" id="doc">
+          <div class="kicker">FIELD NOTES — ON THE COST OF LEAVING THE PAGE</div>
+          <p id="p1"></p>
+          <p id="p2"></p>
+          <p id="p3"></p>
+          <p id="p4"></p>
+        </div>
+
+        <div class="status" id="status"></div>
+
+        <div class="hint" id="hint">
+          <span id="hintText">在文字上按住拖动，框住一段英文</span>
+          <button type="button" id="autoBtn">交给蜘蛛</button>
+          <kbd>Esc</kbd>
+        </div>
+      </div>
+    </div>
+
+    <div class="result">
+      <div class="result-head" id="resultHead">
+        <span class="pill" id="pill">等待框选</span>
+        <span id="resultHint">被踩住的词会亮起来；每个词框的颜色 = 踩它的那条腿的颜色。</span>
+      </div>
+      <div class="result-grid" id="resultGrid"></div>
+    </div>
+
+    <p class="demo-note"><b>说明：</b>网页版是教学演示 —— 文本和词条都是内置的，没有真的跑 OCR。但挑词规则（跳过虚词 → 词形归一 → 考纲优先）、八条腿的最小代价分配、够不着时改牵引导线、词框颜色跟随腿部颜色，都和桌面版同一套逻辑。完整功能（任意界面框选、75.8 万条词典、间隔复习）请下载 Windows 版。</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">IN THE WILD / 真实运行</span>这就是它在别人屏幕上的样子</h2>
+    <p class="lead">不是渲染稿，是本机跑出来的截图：蜘蛛趴在正文下方，八条腿各钉住一个生词，词框描边与腿同色。</p>
+    <figure class="shot" style="margin:0">
+      <img src="https://workbuddy-space-static.codebuddy.work/image/WnTp47kDq3abTVlfRoq50k.png" alt="词蛛在真实文章上踩住八个单词的截图" loading="lazy">
+      <figcaption>真实截图：框选一段英文后，八条腿分别踩向八个生词；颜色一一对应，够不着的词只亮引导线，不硬拉成射线。</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section style="padding-top:0">
+  <div class="wrap">
+    <h2><span class="num">PIPELINE</span>一次识词，五步走完</h2>
+    <p class="lead">全程不离开你正在读的那一行。没有粘贴、没有拍照、没有切换窗口。</p>
+    <div class="flow">
+      <div class="step"><h3>点它的头</h3><p>屏幕冻结变暗，拖框圈住任意界面上的英文。Esc 或右键取消。</p></div>
+      <div class="step"><h3>离线 OCR</h3><p>RapidOCR（纯 ONNX）在本机识别，保留行坐标并换算到词级，150% 缩放也不偏。</p></div>
+      <div class="step"><h3>挑词</h3><p>跳过 the / of 之类虚词 → 复数时态归原形 → 考纲八档优先 → 表外词兜底。</p></div>
+      <div class="step"><h3>八腿踩词</h3><p>蜘蛛爬到词簇下方，八条腿做最小代价分配，一腿一词，颜色即对应关系。</p></div>
+      <div class="step"><h3>收进单词本</h3><p>点 ☆ 收藏，按 1 / 3 / 7 / 14 天自动排期；学习日历记一次打卡。</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">FEATURES</span>它同时是桌宠，也是识词器</h2>
+    <p class="lead">透明置顶、区域点击穿透 —— 它在，但不挡你干活。</p>
+    <div class="fcards">
+      <div class="fcard">
+        <h3><span>老</span>识词</h3>
+        <ul>
+          <li><b>框选即识别</b>：全屏冻结 + 拖拽选框，最小面积保护</li>
+          <li><b>多屏与 DPI</b>：多屏拼接，物理 / 逻辑像素换算</li>
+          <li><b>八腿踩词</b>：8 腿 ↔ 8 词最小代价分配，词框配色跟随腿色</li>
+          <li><b>不自动消失</b>：结果停在你眼前，点蜘蛛的头或身子才收起</li>
+          <li><b>考纲八档</b>：四级 / 六级 / 考研 / 雅思 / 托福 / GRE / 工业英语 / 全部</li>
+          <li><b>置信度下限</b>：0~100% 可调，读不准的词直接不出现</li>
+        </ul>
+      </div>
+      <div class="fcard">
+        <h3><span>蛛</span>桌宠</h3>
+        <ul>
+          <li><b>程序化蜘蛛</b>：8 步足 + 2 触须，两骨 IK，逐帧实时解算</li>
+          <li><b>阈值步态</b>：脚钉原地，体心偏移超过 30% 腿长才迈步</li>
+          <li><b>无随机抖动</b>：落脚点 = 静止位 + 速度前瞻</li>
+          <li><b>四套皮肤</b>：原皮 / 白跳蛛（默认）/ 像素蛛 / 奶蛛，点击即生效</li>
+          <li><b>形变动画</b>：跳跃弧线、摸头、压扁、抖动、冲刺</li>
+          <li><b>点击穿透</b>：腿和身体之外不吃鼠标事件</li>
+        </ul>
+      </div>
+      <div class="fcard">
+        <h3><span>背</span>学习</h3>
+        <ul>
+          <li><b>单词本</b>：搜索、删除、全部收藏，按考纲分类</li>
+          <li><b>间隔重复</b>：1 → 3 → 7 → 14 天，答对进档、答错退回次日</li>
+          <li><b>背单词流程</b>：看词回忆 → 揭示 → 自评 → 只重练错词</li>
+          <li><b>学习日历</b>：53×7 热力图，打开天数与打卡天数分开统计</li>
+          <li><b>成就</b>：7 / 30 / 100 天里程碑，崩溃后可补弹</li>
+          <li><b>导出图片</b>：成就卡导出成 PNG，可直接发出去</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">SCREENS</span>启动台、皮肤、步态、日历</h2>
+    <p class="lead">左边是待部署的蜘蛛蹲在玻璃罐里，点「部署」罐体三档裂纹、网裂闪白、碎裂，蜘蛛爬出来落到桌面。</p>
+    <div class="grid2">
+      <figure class="shot" style="margin:0">
+        <img src="https://workbuddy-space-static.codebuddy.work/image/FWUKmSbAPORe7zvW4QERNm.png" alt="启动台截图" loading="lazy">
+        <figcaption>启动台 · 无边框圆角卡片，右侧玻璃罐里是待部署的蜘蛛</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="https://workbuddy-space-static.codebuddy.work/image/VBRkacylXOhhVfMH2Gdyff.png" alt="四套皮肤截图" loading="lazy">
+        <figcaption>换装 · 四套皮肤即切即生效，桌面上那只同步换，走路中途换也不抽</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="https://workbuddy-space-static.codebuddy.work/image/cFaCiafk3gG4Zdw3hkig24.png" alt="步态五帧截图" loading="lazy">
+        <figcaption>步态 · 五帧是同一个引擎在跑 idle / 行走 / 跳跃，不是逐帧动画素材</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="https://workbuddy-space-static.codebuddy.work/image/En4MEGXoyGqMPowzMs6ZrD.png" alt="学习日历与成就导出截图" loading="lazy">
+        <figcaption>学习日历 · 53×7 热力图；三色格 = 未活动 / 扫过词 / 背过单词</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">UNDER THE HOOD</span>蜘蛛是算出来的，不是画出来的</h2>
+    <p class="lead">没有 sprite sheet，没有骨骼动画文件。八条腿每一帧都由几何解算出来 —— 上面演示里的那八条腿也是同一套算法。</p>
+
+    <div class="stats">
+      <div class="stat"><b>25,700</b><span>行源码 · 33 个 Python 模块 + 1 个 QML</span></div>
+      <div class="stat"><b>758,497</b><span>条内置词典 · 14,942 个考纲标签</span></div>
+      <div class="stat"><b>16</b><span>个测试文件 · 端到端探针 19 项</span></div>
+      <div class="stat"><b>150 MB</b><span>单文件 exe · Qt + OCR 模型 + 词典全内嵌</span></div>
+    </div>
+
+    <div class="two">
+      <div class="panel">
+        <h3>两骨 IK + 阈值步态</h3>
+        <p>每条腿是髋 → 膝 → 脚尖两段骨。膝盖位置由两圆交点解出，骨长和值 <code>L1 + L2 = 1.26 × reach</code>。脚钉在原地，体心相对静止位偏移超过阈值才迈步，迈步时脚向髋部收 18%（真抬腿）。</p>
+        <p>在阈值骨架之上叠加了异步行波相位排班，八条腿像波浪一样依次迈步，而不是各自独立触发。</p>
+        <p>落脚点严格是「静止位 + 速度前瞻」，<b>没有随机抖动</b> —— 加了抖动，脚会在原地游走，站姿散成一团。</p>
+      </div>
+      <div class="panel">
+        <h3>为什么不用 Web 技术栈</h3>
+        <p>桌宠需要「全透明 + 置顶 + 区域穿透点击 + 60fps 自绘」。套一层 WebView 来做这件事，比 <code>QPainter</code> 逐帧自绘贵得多，打包时还要多塞几十 MB。</p>
+        <p>所以：Qt Widgets 画桌宠与瞄准层（自绘 + 区域遮罩更稳），QML 做启动台，OCR 是纯 ONNX，词典是只读 SQLite，<code>threading.local</code> 管连接，不阻塞 UI。</p>
+<pre><span class="c"># 一次识词的真实链路</span>
+<span class="k">点蜘蛛的头</span> → 屏幕冻结 → 拖框 → 松手
+   ↓  RapidOCR（纯 ONNX，保留词级坐标）
+   ↓  挑词：虚词 → 归原形 → 考纲优先 → 表外兜底
+   ↓  8 腿 ↔ 8 词 最小代价分配
+<span class="k">结果卡</span>：音标 / 释义 / 考纲标签 / ☆
+   ↓  1 · 3 · 7 · 14 天排期</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2><span class="num">PRIVACY</span>截图不出这台机器</h2>
+    <p class="lead">没有账号、没有云同步、没有遥测 —— 整份程序里没有任何上报端点。</p>
+    <div class="cols">
+      <ul class="checklist">
+        <li><b>截图不落盘</b>：框选的是本机屏幕，OCR 在本机模型上跑，识别完的临时图直接丢掉</li>
+        <li><b>词典内置</b>：ECDICT Revised，758,497 条，只读，随包分发</li>
+        <li><b>不需要联网激活</b>：装上就能用，没有登录墙</li>
+        <li><b>AI 是可选的</b>：只有你点了「AI 语境」才发请求，且只发词 + 词典义项 + 相邻句，<b>永不发送截图</b></li>
+      </ul>
+      <ul class="checklist no">
+        <li><b>不做</b>：多用户 / 云同步 / 账号体系</li>
+        <li><b>不做</b>：移动端、macOS、Linux（大量 Windows 专有 API：全局鼠标钩子、DPI 换算、DPAPI、Startup 目录）</li>
+        <li><b>没做完</b>：持续自动扫描（帮助面板里如实标着「规划中」）</li>
+        <li><b>没做完</b>：拼写 / 听力题型，目前只有「看词回忆 + 自评」</li>
+      </ul>
+    </div>
+    <p class="demo-note" style="margin-top:18px">上面那栏是刻意写出来的：「看起来能点」不等于「功能完整」。写清楚边界，比多写三个特性更值得信任。</p>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <h2><span class="num">GET IT</span>两条路，都不需要账号</h2>
+    <p class="lead">路线 A 只想用：下 exe 双击。路线 B 想改代码：Python 3.13 从源码跑。仓库里是纯源码，exe 作为 Release 附件提供。</p>
+    <div class="two">
+      <div class="panel">
+        <h3>路线 A · 直接运行</h3>
+        <p>下载 <code>Lexara.exe</code>（约 150 MB），双击即可。不需要装 Python，不需要装运行库。</p>
+        <p>首次启动会先把内部文件（含 75.8 万条词典）解压到临时目录，约 10~20 秒，之后再启动就快了。</p>
+        <p>没买代码签名证书，首次可能弹「Windows 已保护你的电脑」：点「更多信息」→「仍要运行」。</p>
+        <p style="font-family:var(--mono);font-size:12px;color:#85958a">系统要求：Windows 10 / 11 64 位 · 不需要管理员权限 · 不写注册表</p>
+      </div>
+      <div class="panel">
+        <h3>路线 B · 从源码跑</h3>
+        <p>前置：Python 3.13（64 位）。双击 <code>install_first.bat</code> 建环境装依赖，再双击 <code>run.bat</code> 启动，启动台里点「部署」。</p>
+        <p>依赖只有 6 个：PySide6-Essentials、shiboken6、rapidocr_onnxruntime、onnxruntime、opencv-python、numpy。</p>
+        <p>想自己打包：<code>python -m PyInstaller Lexara.spec</code>，产物在 <code>dist\Lexara.exe</code>。仓库里 5 份 spec，结构一致。</p>
+        <p style="font-family:var(--mono);font-size:12px;color:#85958a">卸载 = 删掉 exe，再删 %APPDATA%\Lexara 整个目录</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap row">
+    <div>词蛛 LEXARA · Windows 桌面学习工具 · 程序代码与自绘素材采用 MIT 许可</div>
+    <div>第三方组件：RapidOCR（Apache-2.0）· ECDICT Revised（MIT + CC BY-SA 4.0）· PySide6 / Qt 6（LGPL-3.0）</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- 词典（演示用，31 条） ---------------- */
+  var DICT = {
+    refactoring:{p:"/ˌriːˈfæktərɪŋ/", cn:"重构；整理代码结构", tag:"工业英语"},
+    legacy:{p:"/ˈleɡəsi/", cn:"遗留的；旧系统", tag:"六级"},
+    codebase:{p:"/ˈkəʊdbeɪs/", cn:"代码库", tag:"工业英语"},
+    rarely:{p:"/ˈreəli/", cn:"很少，难得", tag:"四级"},
+    mechanical:{p:"/məˈkænɪkl/", cn:"机械的；无需思考的", tag:"六级"},
+    rename:{p:"/ˌriːˈneɪm/", cn:"重命名", tag:"工业英语"},
+    variable:{p:"/ˈveəriəbl/", cn:"变量；可变的", tag:"考研"},
+    understand:{p:"/ˌʌndəˈstænd/", cn:"理解，懂得", tag:"四级"},
+    modules:{p:"/ˈmɒdjuːlz/", cn:"模块，组件", tag:"六级"},
+    depend:{p:"/dɪˈpend/", cn:"依赖，取决于", tag:"四级"},
+    dependency:{p:"/dɪˈpendənsi/", cn:"依赖项，依赖关系", tag:"工业英语"},
+    harmless:{p:"/ˈhɑːmləs/", cn:"无害的", tag:"六级"},
+    isolation:{p:"/ˌaɪsəˈleɪʃn/", cn:"隔离，孤立", tag:"六级"},
+    trigger:{p:"/ˈtrɪɡə(r)/", cn:"触发，引起", tag:"考研"},
+    cascade:{p:"/kæˈskeɪd/", cn:"级联；一连串", tag:"GRE"},
+    failures:{p:"/ˈfeɪljəz/", cn:"故障，失败", tag:"四级"},
+    scheduler:{p:"/ˈʃedjuːlə(r)/", cn:"调度器", tag:"工业英语"},
+    reorder:{p:"/ˌriːˈɔːdə(r)/", cn:"重新排序", tag:"工业英语"},
+    runtime:{p:"/ˈrʌntaɪm/", cn:"运行时", tag:"工业英语"},
+    experienced:{p:"/ɪkˈspɪəriənst/", cn:"有经验的", tag:"四级"},
+    engineers:{p:"/ˌendʒɪˈnɪəz/", cn:"工程师", tag:"四级"},
+    reconnaissance:{p:"/rɪˈkɒnɪsns/", cn:"侦察，勘察", tag:"GRE"},
+    measure:{p:"/ˈmeʒə(r)/", cn:"测量，衡量", tag:"四级"},
+    annotate:{p:"/ˈænəteɪt/", cn:"标注，注释", tag:"考研"},
+    assumptions:{p:"/əˈsʌmpʃnz/", cn:"假设，前提", tag:"雅思"},
+    verify:{p:"/ˈverɪfaɪ/", cn:"验证，核实", tag:"考研"},
+    defer:{p:"/dɪˈfɜː(r)/", cn:"推迟，延缓", tag:"托福"},
+    tempting:{p:"/ˈtemptɪŋ/", cn:"诱人的，令人心动的", tag:"雅思"},
+    rewrite:{p:"/ˌriːˈraɪt/", cn:"重写", tag:"六级"},
+    evidence:{p:"/ˈevɪdəns/", cn:"证据", tag:"四级"},
+    unambiguous:{p:"/ˌʌnæmˈbɪɡjuəs/", cn:"明确无误的，不含糊", tag:"GRE"},
+    instrument:{p:"/ˈɪnstrəmənt/", cn:"工具，手段", tag:"六级"},
+    habit:{p:"/ˈhæbɪt/", cn:"习惯", tag:"四级"},
+    section:{p:"/ˈsekʃn/", cn:"部分，章节", tag:"四级"},
+    actually:{p:"/ˈæktʃuəli/", cn:"实际上", tag:"四级"},
+    beats:{p:"/biːts/", cn:"胜过，打败", tag:"四级"},
+    abandoned:{p:"/əˈbændənd/", cn:"被放弃的；放弃", tag:"六级"},
+    definition:{p:"/ˌdefɪˈnɪʃn/", cn:"定义", tag:"四级"},
+    forget:{p:"/fəˈɡet/", cn:"忘记", tag:"四级"}
+  };
+
+  var STOP = {};
+  ("a an the is are was were be been of on to in at it its that this these those can could you your they their them how each other once before until " +
+   "every and but as or by for with from into onto over under about after again all any both do does did has have had will would should may might must " +
+   "not no so than then we our us if when what which who whom there here also just only very more most such own same too out up down off").split(" ").forEach(function(w){ STOP[w]=1; });
+
+  var COLORS = ["#ee6d84","#5fa8e0","#9b8ce6","#34c3c9","#e2913f","#b3bf52","#4ec07d","#e2584b"];
+  var INSTANT = /[?&]instant=1/.test(location.search);   // 截图 / 无动画环境用
+
+  /* ---------------- 文本 ---------------- */
+  var PARAS = [
+    "Refactoring a legacy codebase is rarely a mechanical task. Before you rename a single variable, you have to understand how the modules depend on each other.",
+    "A dependency that looks harmless in isolation can trigger a cascade of failures once the scheduler begins to reorder work at runtime.",
+    "Experienced engineers therefore treat the first pass as reconnaissance: they measure the cost of each change, annotate the assumptions they cannot verify, and defer the tempting rewrite until the evidence is unambiguous.",
+    "The instrument matters less than the habit: one hour, one section, one list of the words you actually met. A page you finished beats a page you abandoned for a definition you will forget by Monday."
+  ];
+
+  var docEl = document.getElementById("doc");
+  var stage = document.getElementById("stage");
+  var legLayer = document.getElementById("legLayer");
+  var bodyLayer = document.getElementById("bodyLayer");
+  var statusEl = document.getElementById("status");
+  var hintEl = document.getElementById("hint");
+  var hintText = document.getElementById("hintText");
+  var gridEl = document.getElementById("resultGrid");
+  var pillEl = document.getElementById("pill");
+  var resultHint = document.getElementById("resultHint");
+  var autoBtn = document.getElementById("autoBtn");
+
+  var allEls = [];       // 全部词 span
+  var wordEls = [];      // 命中词典的词 span
+  var stopEls = [];      // 命中虚词表的词 span（仅用于统计）
+  var state = { pegs: [], bx: 0, by: 0, raf: 0, box: null, dragging: false, sx: 0, sy: 0, active: false };
+
+  /* ---------------- 渲染正文（每个词包一层 span） ---------------- */
+  function renderText(){
+    var ids = ["p1","p2","p3","p4"];
+    PARAS.forEach(function(txt, i){
+      var host = document.getElementById(ids[i]);
+      var frag = document.createDocumentFragment();
+      var re = /([A-Za-z][A-Za-z\-']*)/g, last = 0, m;
+      while ((m = re.exec(txt)) !== null){
+        if (m.index > last) frag.appendChild(document.createTextNode(txt.slice(last, m.index)));
+        var w = m[1], key = w.toLowerCase();
+        var sp = document.createElement("span");
+        sp.className = "w";
+        sp.textContent = w;
+        sp.dataset.k = key;
+        allEls.push(sp);
+        frag.appendChild(sp);
+        if (DICT[key]) wordEls.push(sp);
+        else if (STOP[key]) stopEls.push(sp);
+        last = m.index + w.length;
+      }
+      if (last < txt.length) frag.appendChild(document.createTextNode(txt.slice(last)));
+      host.appendChild(frag);
+    });
+  }
+
+  /* ---------------- 盒模型工具 ---------------- */
+  function stageRect(){ return stage.getBoundingClientRect(); }
+  function relRect(el){
+    var s = stageRect(), r = el.getBoundingClientRect();
+    return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height,
+             cx: r.left - s.left + r.width / 2, cy: r.top - s.top + r.height / 2 };
+  }
+
+  /* ---------------- 蜘蛛几何 ---------------- */
+  var L1 = 104, L2 = 124;
+  var REACH = L1 + L2;
+
+  var BODY_S = 1.7;
+
+  function hipPoints(cx, cy){
+    // 4 左 4 右，沿头胸两侧分布（相对体心，随全身比例缩放）
+    var off = [[-15,-8],[-19,3],[-15,15],[-8,25],[15,-8],[19,3],[15,15],[8,25]];
+    return off.map(function(o){ return { x: cx + o[0] * BODY_S, y: cy + o[1] * BODY_S }; });
+  }
+
+  function ik(hip, tip, bodyC){
+    var dx = tip.x - hip.x, dy = tip.y - hip.y;
+    var d = Math.sqrt(dx*dx + dy*dy) || 0.001;
+    var minD = Math.abs(L1 - L2) + 4, maxD = REACH * 0.995;
+    var dc = Math.max(minD, Math.min(d, maxD));
+    var ux = dx / d, uy = dy / d;
+    var ax = hip.x + ux * dc, ay = hip.y + uy * dc;   // 实际可达点
+    var a = (L1*L1 - L2*L2 + dc*dc) / (2*dc);
+    var hh = Math.sqrt(Math.max(L1*L1 - a*a, 0));
+    var mx = hip.x + ux * a, my = hip.y + uy * a;
+    var px = -uy, py = ux;
+    var vx = hip.x - bodyC.x, vy = hip.y - bodyC.y;
+    if (px*vx + py*vy < 0){ px = -px; py = -py; }
+    return { knee:{ x: mx + px*hh, y: my + py*hh }, tip:{ x: ax, y: ay }, reached: dc >= d - 0.5 };
+  }
+
+  function easeOut(p){ return 1 - Math.pow(1 - p, 3); }
+
+  /* ---------------- 画蜘蛛 ---------------- */
+  function bodySVG(cx, cy){
+    var s = '<g transform="translate(' + cx + ',' + cy + ') scale(' + BODY_S + ')" filter="url(#glow)">'
+      + '<ellipse cx="34" cy="9" rx="33" ry="16" fill="#2a3763" opacity=".94"/>'
+      + '<path d="M0,-30 L23,-7 L15,19 L-15,21 L-24,-5 Z" fill="#313f70" stroke="#42528c" stroke-width="1"/>'
+      + '<path d="M0,-30 L10,-8 L0,4 L-10,-8 Z" fill="#48599b" opacity=".85"/>'
+      + '<circle cx="-7" cy="6" r="2.2" fill="#eef2ff"/><circle cx="7" cy="6" r="2.2" fill="#eef2ff"/>'
+      + '<circle cx="-7" cy="6.6" r="1.1" fill="#101a33"/><circle cx="7" cy="6.6" r="1.1" fill="#101a33"/>'
+      + '</g>';
+    bodyLayer.innerHTML = s;
+  }
+
+  function clearSpider(){
+    legLayer.innerHTML = "";
+    bodyLayer.innerHTML = "";
+  }
+
+  /* ---------------- 选中逻辑 ---------------- */
+  function clearPegs(){
+    for (var i = 0; i < wordEls.length; i++){
+      wordEls[i].classList.remove("peg","pop");
+      wordEls[i].style.removeProperty("--c");
+    }
+    clearSpider();
+    gridEl.innerHTML = "";
+    statusEl.classList.remove("on");
+    pillEl.textContent = "等待框选";
+    resultHint.textContent = "被踩住的词会亮起来；每个词框的颜色 = 踩它的那条腿的颜色。";
+    hintText.textContent = "在文字上按住拖动，框住一段英文";
+    state.pegs = [];
+    state.active = false;
+  }
+
+  function wordsInRect(r){
+    var hits = [], stops = 0, total = 0;
+    for (var t = 0; t < allEls.length; t++){
+      var a = relRect(allEls[t]);
+      if (a.cx >= r.x && a.cx <= r.x + r.w && a.cy >= r.y && a.cy <= r.y + r.h) total++;
+    }
+    for (var i = 0; i < wordEls.length; i++){
+      var w = relRect(wordEls[i]);
+      if (w.cx >= r.x && w.cx <= r.x + r.w && w.cy >= r.y && w.cy <= r.y + r.h) hits.push(wordEls[i]);
+    }
+    for (var j = 0; j < stopEls.length; j++){
+      var s = relRect(stopEls[j]);
+      if (s.cx >= r.x && s.cx <= r.x + r.w && s.cy >= r.y && s.cy <= r.y + r.h) stops++;
+    }
+    return { hits: hits, stops: stops, total: total };
+  }
+
+  function peg(words, stops, total){
+    if (!words.length){
+      pillEl.textContent = "没有可识别的生词";
+      resultHint.textContent = "这一段里没有命中词典的词，换个位置框一下试试。";
+      return;
+    }
+    var n = Math.min(8, words.length);
+    var picked = words.slice(0, n);
+
+    // 命中即上色
+    picked.forEach(function(el, i){
+      el.style.setProperty("--c", COLORS[i % COLORS.length]);
+      if (INSTANT) el.style.animation = "none";
+      el.classList.add("peg");
+    });
+    hintText.textContent = "再拖一个框换个位置 · Esc 清空";
+
+    // 状态行
+    statusEl.innerHTML = '<span>识别 <b>' + total + '</b> 词</span><span>跳过虚词 <b>' + stops + '</b></span>'
+      + '<span>挑出 <b>' + picked.length + '</b> 个生词 · 考纲优先</span>';
+    statusEl.classList.add("on");
+    pillEl.textContent = picked.length + " 个词已踩住";
+
+    if (INSTANT){ layout(picked); return; }
+    requestAnimationFrame(function(){
+      requestAnimationFrame(function(){ layout(picked); });
+    });
+  }
+
+  function layout(picked){
+    var boxes = picked.map(relRect);
+    var left = Math.min.apply(null, boxes.map(function(b){ return b.x; }));
+    var right = Math.max.apply(null, boxes.map(function(b){ return b.x + b.w; }));
+    var top = Math.min.apply(null, boxes.map(function(b){ return b.y; }));
+    var bottom = Math.max.apply(null, boxes.map(function(b){ return b.y + b.h; }));
+
+    var sw = stage.clientWidth, sh = stage.clientHeight;
+    var bx = Math.max(70, Math.min(sw - 70, (left + right) / 2));
+    var by = Math.max(top + 96, Math.min(sh - 48, bottom + 102));
+    state.bx = bx; state.by = by;
+
+    // 先画身体，再从腿部静止点伸出去
+    bodyLayer.innerHTML = "";
+    var bodyG = bodySVG(bx, by);
+
+    var hips = hipPoints(bx, by);
+    var bodyC = { x: bx, y: by };
+
+    // 贪心最小代价：|Δx| + 0.35 * 距离
+    var pairs = [], used = {};
+    boxes.forEach(function(b, pi){
+      hips.forEach(function(h, hi){
+        var dx = Math.abs(h.x - b.cx), dy = Math.abs(h.y - b.cy);
+        pairs.push({ pi: pi, hi: hi, cost: dx + 0.35 * Math.sqrt(dx*dx + dy*dy) });
+      });
+    });
+    pairs.sort(function(a, b){ return a.cost - b.cost; });
+    var assigned = {}, takenHip = {};
+    pairs.forEach(function(p){
+      if (assigned[p.pi] !== undefined || takenHip[p.hi]) return;
+      assigned[p.pi] = p.hi; takenHip[p.hi] = 1;
+    });
+
+    var legs = [];
+    boxes.forEach(function(b, pi){
+      var hi = assigned[pi];
+      var hip = hips[hi];
+      var target = { x: b.cx, y: b.cy + b.h * 0.5 + 2 };
+      var color = COLORS[pi % COLORS.length];
+      var glow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      glow.setAttribute("fill", "none"); glow.setAttribute("stroke", color);
+      glow.setAttribute("stroke-width", "8"); glow.setAttribute("opacity", ".18");
+      glow.setAttribute("stroke-linecap", "round");
+      var core = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      core.setAttribute("fill", "none"); core.setAttribute("stroke", color);
+      core.setAttribute("stroke-width", "2.8"); core.setAttribute("stroke-linecap", "round");
+      var guide = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      guide.setAttribute("stroke", color); guide.setAttribute("stroke-width", "1.2");
+      guide.setAttribute("stroke-dasharray", "3 5"); guide.setAttribute("opacity", "0");
+      var foot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      foot.setAttribute("r", "2.8"); foot.setAttribute("fill", color);
+      foot.setAttribute("opacity", "0"); foot.setAttribute("filter", "url(#glow)");
+      legLayer.appendChild(glow); legLayer.appendChild(core); legLayer.appendChild(guide); legLayer.appendChild(foot);
+      legs.push({ hip: hip, rest: { x: hip.x + (hip.x < bx ? -6 : 6), y: hip.y + 8 },
+                  target: target, color: color, glow: glow, core: core, guide: guide, foot: foot, bodyC: bodyC });
+    });
+
+    animate(legs);
+    renderCards(picked);
+  }
+
+  function animate(legs){
+    if (state.raf) cancelAnimationFrame(state.raf);
+    var t0 = performance.now();
+    var DUR = 0.40, STAG = 0.038;
+
+    function frame(now){
+      var t = (now - t0) / 1000, done = true;
+      legs.forEach(function(leg, i){
+        var p = Math.max(0, Math.min(1, (t - i * STAG) / DUR));
+        if (p < 1) done = false;
+        var e = easeOut(p);
+        var tip = {
+          x: leg.rest.x + (leg.target.x - leg.rest.x) * e,
+          y: leg.rest.y + (leg.target.y - leg.rest.y) * e
+        };
+        var r = ik(leg.hip, tip, leg.bodyC);
+        var d = "M" + leg.hip.x.toFixed(1) + "," + leg.hip.y.toFixed(1)
+              + " L" + r.knee.x.toFixed(1) + "," + r.knee.y.toFixed(1)
+              + " L" + r.tip.x.toFixed(1) + "," + r.tip.y.toFixed(1);
+        leg.glow.setAttribute("d", d);
+        leg.core.setAttribute("d", d);
+        leg.glow.setAttribute("opacity", (0.18 * e).toFixed(3));
+        leg.foot.setAttribute("cx", r.tip.x.toFixed(1));
+        leg.foot.setAttribute("cy", r.tip.y.toFixed(1));
+        leg.foot.setAttribute("opacity", (0.95 * e).toFixed(3));
+        if (e > 0.995 && !r.reached){
+          leg.guide.setAttribute("x1", r.tip.x); leg.guide.setAttribute("y1", r.tip.y);
+          leg.guide.setAttribute("x2", leg.target.x); leg.guide.setAttribute("y2", leg.target.y);
+          leg.guide.setAttribute("opacity", "0.5");
+        } else {
+          leg.guide.setAttribute("opacity", "0");
+        }
+      });
+      if (!done) state.raf = requestAnimationFrame(frame);
+      else state.raf = 0;
+    }
+    if (INSTANT){ frame(t0 + 1e6); return; }
+    state.raf = requestAnimationFrame(frame);
+  }
+
+  function renderCards(picked){
+    gridEl.innerHTML = "";
+    picked.forEach(function(el, i){
+      var k = el.dataset.k, d = DICT[k];
+      if (!d) return;
+      var c = COLORS[i % COLORS.length];
+      var card = document.createElement("div");
+      card.className = "rcard";
+      card.style.setProperty("--c", c);
+      card.style.animationDelay = (i * 55) + "ms";
+      if (INSTANT){ card.style.animation = "none"; card.style.opacity = "1"; card.style.transform = "none"; }
+      card.innerHTML = '<button class="star" type="button" aria-label="收藏">☆</button>'
+        + '<div class="en"></div><div class="ph"></div><div class="cn"></div>'
+        + '<div class="tag"></div>';
+      card.querySelector(".en").textContent = el.textContent;
+      card.querySelector(".ph").textContent = d.p;
+      card.querySelector(".cn").textContent = d.cn;
+      card.querySelector(".tag").textContent = d.tag;
+      var star = card.querySelector(".star");
+      star.addEventListener("click", function(){
+        var on = star.classList.toggle("on");
+        star.textContent = on ? "★" : "☆";
+        var n = gridEl.querySelectorAll(".star.on").length;
+        resultHint.textContent = n ? ("已收进单词本 " + n + " 个词 · 按 1 / 3 / 7 / 14 天排期") : "被踩住的词会亮起来；每个词框的颜色 = 踩它的那条腿的颜色。";
+      });
+      gridEl.appendChild(card);
+    });
+  }
+
+  /* ---------------- 拖框 ---------------- */
+  function onDown(e){
+    if (e.target.closest && e.target.closest(".hint")) return;
+    var s = stageRect();
+    state.dragging = true;
+    state.sx = e.clientX - s.left;
+    state.sy = e.clientY - s.top;
+    clearPegs();
+    stage.classList.add("frozen");
+    if (state.box) state.box.remove();
+    var d = document.createElement("div");
+    d.className = "selbox";
+    d.style.left = state.sx + "px"; d.style.top = state.sy + "px";
+    d.style.width = "0px"; d.style.height = "0px";
+    stage.appendChild(d);
+    state.box = d;
+    try { stage.setPointerCapture(e.pointerId); } catch(err){}
+    e.preventDefault();
+  }
+
+  function onMove(e){
+    if (!state.dragging || !state.box) return;
+    var s = stageRect();
+    var x = Math.max(0, Math.min(s.width, e.clientX - s.left));
+    var y = Math.max(0, Math.min(s.height, e.clientY - s.top));
+    state.box.style.left = Math.min(x, state.sx) + "px";
+    state.box.style.top = Math.min(y, state.sy) + "px";
+    state.box.style.width = Math.abs(x - state.sx) + "px";
+    state.box.style.height = Math.abs(y - state.sy) + "px";
+  }
+
+  function onUp(e){
+    if (!state.dragging) return;
+    state.dragging = false;
+    stage.classList.remove("frozen");
+    var box = state.box;
+    if (!box) return;
+    var r = { x: parseFloat(box.style.left), y: parseFloat(box.style.top),
+              w: parseFloat(box.style.width), h: parseFloat(box.style.height) };
+    box.remove(); state.box = null;
+
+    if (r.w * r.h < 700){                 // 面积太小 → 视为误触，恢复提示
+      return;
+    }
+    var res = wordsInRect(r);
+    peg(res.hits, res.stops, res.total);
+  }
+
+  function onKey(e){
+    if (e.key === "Escape"){
+      if (state.box){ state.box.remove(); state.box = null; state.dragging = false; }
+      stage.classList.remove("frozen");
+      clearPegs();
+    }
+  }
+
+  /* ---------------- 自动演示 ---------------- */
+  // 在词典命中词里找一个「最紧凑的 8 词簇」，避免自动演示时腿够不着
+  function bestCluster(n){
+    var els = wordEls.filter(function(el){ return el.dataset.k in DICT; });
+    var boxes = els.map(relRect);
+    var best = null;
+    for (var s = 0; s < boxes.length; s++){
+      var order = boxes.map(function(b, i){ return { i:i, d:Math.hypot(b.cx - boxes[s].cx, b.cy - boxes[s].cy) }; })
+                       .sort(function(a, b){ return a.d - b.d; })
+                       .slice(0, n)
+                       .sort(function(a, b){ return a.i - b.i; });
+      var L = Infinity, R = -Infinity, T = Infinity, B = -Infinity;
+      order.forEach(function(o){
+        var b = boxes[o.i];
+        L = Math.min(L, b.x); R = Math.max(R, b.x + b.w);
+        T = Math.min(T, b.y); B = Math.max(B, b.y + b.h);
+      });
+      var area = (R - L) * (B - T) + (R - L) * 1.6;
+      if (!best || area < best.area) best = { area: area, idx: order.map(function(o){ return o.i; }) };
+    }
+    return best.idx.map(function(i){ return els[i]; });
+  }
+
+  function autoDemo(){
+    var picked = bestCluster(8) || [];
+    var stops = 0, total = allEls.length;
+    for (var k = 0; k < stopEls.length; k++) stops++;
+    clearPegs();
+    peg(picked, stops, total);
+  }
+
+  /* ---------------- 初始化 ---------------- */
+  renderText();
+  stage.addEventListener("pointerdown", onDown);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("keydown", onKey);
+  autoBtn.addEventListener("click", function(e){ e.stopPropagation(); autoDemo(); });
+
+  var resizeT;
+  window.addEventListener("resize", function(){
+    clearTimeout(resizeT);
+    resizeT = setTimeout(function(){
+      if (state.pegs.length || gridEl.children.length) clearPegs();
+    }, 180);
+  });
+
+  // 首屏给一个轻量的自动演示，让人知道可以拖
+  var started = false;
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(en){
+      if (en.isIntersecting && !started){
+        started = true;
+        setTimeout(autoDemo, 620);
+      }
+    });
+  }, { threshold: 0.35 });
+  io.observe(stage);
+
+  document.getElementById("clock").textContent = window.innerWidth + " × " + window.innerHeight;
+})();
+</script>
+</body>
+</html>
