@@ -61,6 +61,7 @@ CASES = [
     # 背单词卡片的 AI 辅助（造句 / 同义词）：提示词口径 + 状态机 + 缓存/作废。
     # 一次网络都不发，worker 是注入的假实现。
     ("背单词 AI 辅助（造句/同义词）", "test/test_study_help.py", "unittest"),
+    ("框选中译英：状态/界面/本机 HTTP", "test/test_translation.py", "unittest"),
     # 默写判分：纯函数，守的是「拼写对就不算错」的口径（大小写/标点/连字符）。
     ("默写单词判分", "test/test_spell_check.py", "unittest"),
     # 2026-10-18 新增（任务书 §2.2 / §4 / §5 / §6 / §7）：

@@ -64,7 +64,7 @@ class CaptureOverlay(QWidget):
     selected = Signal(QRect)     # 逻辑坐标（相对虚拟桌面左上角）
     cancelled = Signal()
 
-    def __init__(self, frozen: QPixmap, geo: QRect):
+    def __init__(self, frozen: QPixmap, geo: QRect, purpose: str = "words"):
         super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
                          | Qt.Tool | Qt.NoDropShadowWindowHint)
         self.setCursor(Qt.CrossCursor)
@@ -77,6 +77,7 @@ class CaptureOverlay(QWidget):
         self._drag = False
         self._finished = False
         self._hover = None
+        self._purpose = purpose
 
     # ------------------------------------------------ 状态
     def _dpr(self) -> float:
@@ -170,7 +171,9 @@ class CaptureOverlay(QWidget):
         painter.end()
 
     def _paint_tip(self, painter: QPainter):
-        tip = "拖动鼠标框选要识别的英文　·　Esc / 右键取消"
+        tip = ("拖动鼠标框选要翻译的中文　·　Esc / 右键取消"
+               if self._purpose == "translation" else
+               "拖动鼠标框选要识别的英文　·　Esc / 右键取消")
         painter.setFont(QFont("Microsoft YaHei UI", 11))
         fm = painter.fontMetrics()
         tw = fm.horizontalAdvance(tip) + 44
@@ -185,7 +188,9 @@ class CaptureOverlay(QWidget):
         painter.setPen(TIP_FG)
         painter.drawText(QRect(tx, ty, tw, th), Qt.AlignCenter, tip)
 
-        sub = "蛛蛛会用八条腿踩住挑出来的单词"
+        sub = ("本机识别中文，仅将识别文字发送到已配置的 AI 服务"
+               if self._purpose == "translation" else
+               "蛛蛛会用八条腿踩住挑出来的单词")
         painter.setFont(QFont("Microsoft YaHei UI", 9))
         fm2 = painter.fontMetrics()
         sw = fm2.horizontalAdvance(sub) + 32

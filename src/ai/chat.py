@@ -162,6 +162,7 @@ class _Worker(QThread):
             self.finished_with.emit(True, {
                 "text": content[:MAX_REPLY_CHARS],
                 "truncated": len(content) > MAX_REPLY_CHARS,
+                "finish_reason": choices[0].get("finish_reason", ""),
                 "elapsed": round(elapsed, 2),
                 "model": payload.get("model") or self.model,
             })

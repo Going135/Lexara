@@ -22,7 +22,9 @@
 
 <p align="center"><sub>Real screenshot from the running app: after lassoing a paragraph, the spider lies over the text and each of its eight legs reaches for one unfamiliar word. Word-box colour = the colour of the leg that reached it.</sub></p>
 
-**Fully offline.** Screenshots, OCR, dictionary lookups and review scheduling all happen on your machine — no uploads, no account, no bundled API keys.
+**Offline word lookup and review.** Screenshots, OCR, dictionary lookups and review scheduling all happen on your machine — no uploads, no account, no bundled API keys.
+
+**Optional Chinese-to-English screen translation (AI):** right-click the spider and choose “框选中译英（AI）”, then select Chinese text. The translation card supports editing the source, retrying and copying the English result. Configure your compatible model service in Settings → AI Model first. Chinese OCR runs locally; only recognized text is sent to the configured service, never screenshots.
 
 **The spider is computed, not animated.** Eight walking legs plus two antennae, two-bone IK, threshold-driven gait, solved every frame. No sprite sheet, no skeletal animation files.
 

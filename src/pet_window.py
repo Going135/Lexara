@@ -428,6 +428,7 @@ class OcrWorker(QThread):
         timings["total_worker_ms"] = round((time.perf_counter() - started) * 1000.0, 1)
         self.done.emit(words, {"positions": positions,
                                "analysis": analysis,
+                               "request_id": getattr(self, "request_id", None),
                                "timings": timings,
                                "boxes": boxes,
                                "engine": self.engine_id,
@@ -544,6 +545,10 @@ class PetWindow(QWidget):
         self.recall_callback = None
         self._overlay = None
         self._capture_busy = False   # 框选遮罩已起或已排期，防重入
+        self._capture_purpose = "words"
+        self._scan_generation = 0
+        self._translation_dialog = None
+        self._shutting_down = False
         self._workers = []
         self._pending_rect = None
         #: 最近一次识别的选区与 DPR（屏幕坐标换算的输入），存在窗口上而不是 worker 上
@@ -890,6 +895,9 @@ class PetWindow(QWidget):
                 or self._aim_pending is not None or self._capture_busy
                 or "aim" in self._dialogs):
             return True
+        if self._translation_visible() and self._translation_dialog.service.state["state"] in (
+                "recognizing", "translating"):
+            return True
         # 步态没站定（任何一条腿还在迈 / 徽章站姿还没混到位 / 身体还在滑）
         spider = self.spider
         if spider._idle_pose_t < 0.99:
@@ -1081,6 +1089,8 @@ class PetWindow(QWidget):
         self.wake()
 
     def _tick_behavior(self, now: float) -> None:
+        if self._translation_visible():
+            return
         if self.behavior_mode == "idle" or self._overlay is not None or self.dragging:
             return
         if self._travel is not None or now < self._behavior_pause_until:
@@ -1473,6 +1483,16 @@ class PetWindow(QWidget):
         这里只拆桌宠自己，让启动台继续活着。
         """
         _log("[pet] shutdown 开始")
+        self._shutting_down = True
+        self._scan_generation += 1
+        self._capture_busy = False
+        if self._translation_dialog is not None:
+            self._translation_dialog.close()
+            self._translation_dialog.service.shutdown()
+            try:
+                QApplication.instance().aboutToQuit.disconnect(self._translation_dialog.service.shutdown)
+            except RuntimeError:
+                pass
         try:
             QApplication.instance().removeNativeEventFilter(self._global_scan_hotkey)
             self._global_scan_hotkey.unregister()
@@ -1841,7 +1861,7 @@ class PetWindow(QWidget):
         if session.state != "running":
             return
         if self._capture_busy or "aim" in self._dialogs or self.dragging \
-                or self._words_pending is not None:
+                or self._words_pending is not None or self._translation_visible():
             return
         if worker.isRunning() is False:
             self._on_sense_fault("感应线程已退出，已停止（不会自动重启）")
@@ -1866,7 +1886,7 @@ class PetWindow(QWidget):
     def _on_sense_notice(self, item: dict) -> None:
         """后台挑出一个要提示的词：只闪射线和高亮，**腿不参与**（§7.2）。"""
         overlay = self._sense_overlay
-        if overlay is None:
+        if overlay is None or self._translation_visible():
             return
         overlay.show_notice(item)
         # 日志里只有坐标和计数，没有词本身
@@ -1948,6 +1968,7 @@ class PetWindow(QWidget):
             return action
 
         add("框选识词", self.start_capture, icon_kind="capture")
+        add("框选中译英（AI）", self.start_translation_capture, icon_kind="capture")
         add("我的单词本", self.open_wordbook, icon_kind="book")
         add("识词设置（%s）" % self._mode_label(), self.open_settings, icon_kind="settings")
         menu.addSeparator()
@@ -2093,6 +2114,14 @@ class PetWindow(QWidget):
 
     # ------------------------------------------------ 框选识词
     def start_capture(self) -> None:
+        self._start_capture("words")
+
+    def start_translation_capture(self) -> None:
+        self._start_capture("translation")
+
+    def _start_capture(self, purpose: str) -> None:
+        if self._shutting_down:
+            return
         if not OcrEngine.available():
             self.say("缺少 OCR 组件，无法识词", 2600)
             return
@@ -2102,6 +2131,14 @@ class PetWindow(QWidget):
             # 截图 + 十字光标，看着像卡死，再点一下还会再发一次 selected。
             return
         self._capture_busy = True
+        self._capture_purpose = purpose
+        self._scan_generation += 1
+        if self._translation_dialog is not None:
+            self._translation_dialog.close()
+        for key in ("aim", "words"):
+            dialog = self._dialogs.pop(key, None)
+            if dialog is not None:
+                dialog.close()
         self._touch()
         # 折叠状态下识词：八条腿都收着，踩词无从谈起 —— **先伸腿**，
         # 再走正常流程。这里用 `silent`，免得「正在读这段文字…」的提示
@@ -2121,6 +2158,8 @@ class PetWindow(QWidget):
         QTimer.singleShot(260, self._capture_go)
 
     def _capture_go(self) -> None:
+        if self._shutting_down or not self._capture_busy:
+            return
         try:
             pixmap, geometry, dpr = grab_virtual_desktop()
         except Exception:                      # noqa: BLE001
@@ -2132,7 +2171,7 @@ class PetWindow(QWidget):
             stale = self._overlay
             if stale is not None:
                 stale.close()
-            self._overlay = CaptureOverlay(pixmap, geometry)
+            self._overlay = CaptureOverlay(pixmap, geometry, purpose=self._capture_purpose)
             self._overlay.selected.connect(
                 lambda rect: self._on_region(rect, pixmap, dpr, geometry))
             self._overlay.cancelled.connect(self._capture_cancel)
@@ -2170,6 +2209,10 @@ class PetWindow(QWidget):
                        max(4, int(rect.height() * dpr)))
         image = pixmap.toImage().copy(device)
 
+        if self._capture_purpose == "translation":
+            self._begin_translation(image, rect.translated(geo.topLeft()))
+            return
+
         # 不再「跳到选区旁边干等 + 弹个正在识别」。
         # 蜘蛛立刻自己走过去（近）或跳过去（远），OCR 在后台并行跑；
         # 到位后进入 think 姿态 —— 关节球亮起，就是它在干活的全部提示。
@@ -2190,6 +2233,7 @@ class PetWindow(QWidget):
                            self.capture_limit, self.capture_skip_stopwords,
                            min_conf=self.min_conf, parent=self)
         worker.learning_history = [item.to_dict() for item in self.book.items]
+        worker.request_id = self._scan_generation
         worker.capture_rect = QRect(rect)      # 留一份，方便单独调试 worker
         worker.dpr = dpr
         self._workers.append(worker)
@@ -2202,6 +2246,43 @@ class PetWindow(QWidget):
         # DirectConnection 在 worker 线程里执行，所以 `_reap` 只做线程安全的操作。
         worker.finished.connect(lambda item=worker: self._reap(item))
         worker.start()
+
+    def _begin_translation(self, image, screen_rect) -> None:
+        # Qt image conversion belongs to the GUI thread; workers receive a copy.
+        from translation_dialog import TranslationDialog
+        from settings_store import Settings
+        if self._translation_dialog is None:
+            settings = self.settings if self.settings is not None else Settings()
+            self._translation_dialog = TranslationDialog(settings, self)
+            self._translation_dialog.busyChanged.connect(self._translation_busy_changed)
+            QApplication.instance().aboutToQuit.connect(self._translation_dialog.service.shutdown)
+        self._pending_rect = None
+        self._travel = None
+        self._travel_done = None
+        try:
+            array = qimage_to_ndarray(image)
+            self._apply_geometry()
+            self.travel_to(QPoint(screen_rect.center().x(),
+                                  screen_rect.bottom() + int(self.sprite_w * 0.3)),
+                           done=self._translation_arrived)
+            self._translation_dialog.begin(array, screen_rect, self.min_conf)
+        except Exception:
+            self._set_state("idle")
+            self.say("翻译启动失败，请重新框选。", 2600)
+
+    def _translation_busy_changed(self, busy: bool) -> None:
+        if not self._shutting_down:
+            if self._travel is None:
+                self._set_state("think" if busy else "idle")
+
+    def _translation_visible(self) -> bool:
+        return self._translation_dialog is not None and self._translation_dialog.isVisible()
+
+    def _translation_arrived(self) -> None:
+        if self._shutting_down:
+            return
+        state = self._translation_dialog.service.state["state"]
+        self._set_state("think" if state in ("recognizing", "translating") else "idle")
 
     def _enter_think(self) -> None:
         """到位：关节球亮起，宣告「我在读这块字」。"""
@@ -2345,6 +2426,11 @@ class PetWindow(QWidget):
         worker.deleteLater()
 
     def _on_ocr_done(self, words, meta, error, worker=None) -> None:
+        if self._shutting_down:
+            return
+        request_id = meta.get("request_id")
+        if request_id is not None and request_id != self._scan_generation:
+            return
         if error:
             self._set_state("idle")
             self.say(content.bubble_for("ocr_fail"), 2600)
